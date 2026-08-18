@@ -1,0 +1,24 @@
+{
+  auto_https disable_redirects
+  admin off
+}
+
+https://{$STAGING_WEB_HOST} {
+  tls internal
+  encode zstd gzip
+  reverse_proxy web:3000
+}
+
+https://{$STAGING_API_HOST} {
+  tls internal
+  encode zstd gzip
+  reverse_proxy api:8000
+}
+
+https://{$STAGING_STORAGE_HOST} {
+  tls internal
+  request_body {
+    max_size 5GB
+  }
+  reverse_proxy minio:9000
+}

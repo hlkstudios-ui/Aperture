@@ -1,0 +1,45 @@
+{
+	admin off
+	email {$ACME_EMAIL}
+	http_port 8080
+	https_port 8443
+}
+
+{$WEB_HOSTNAME}, {$ORIGIN_HOSTNAME} {
+	encode zstd gzip
+
+	route {
+		@untrusted not header X-Aperture-Origin-Secret {$ORIGIN_EDGE_SECRET}
+		respond @untrusted 404
+
+		@untrustedStudio {
+			path /studio /studio/* /api/admin /api/admin/*
+			not header X-Aperture-Studio-Edge {$STUDIO_EDGE_SECRET}
+		}
+		respond @untrustedStudio 404
+
+		handle_path /api/* {
+			reverse_proxy api:8000
+		}
+
+		handle {
+			reverse_proxy web:3000
+		}
+	}
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+	}
+}
+
+{$STORAGE_HOSTNAME} {
+	encode zstd gzip
+	request_body {
+		max_size 5GB
+	}
+	reverse_proxy minio:9000
+	header -Server
+}

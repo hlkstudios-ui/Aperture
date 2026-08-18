@@ -1,0 +1,26 @@
+{
+  "record_version": 1,
+  "environment": "dummy",
+  "decision": "pending_human_approval",
+  "release": {
+    "id": "DUMMY_RELEASE_ID",
+    "infrastructure_version": "DUMMY_INFRASTRUCTURE_VERSION",
+    "deployed_at": "2026-08-16T00:00:00Z",
+    "migration_head": "b7e4c91d2a60",
+    "image_digests": {
+      "web": "DUMMY_WEB_IMAGE_DIGEST",
+      "api": "DUMMY_API_IMAGE_DIGEST",
+      "media_worker": "DUMMY_MEDIA_WORKER_IMAGE_DIGEST",
+      "scene_worker": "DUMMY_SCENE_WORKER_IMAGE_DIGEST",
+      "backup": "DUMMY_BACKUP_IMAGE_DIGEST"
+    }
+  },
+  "gates": {
+    "production_admin": {"status": "pending", "owner": "DUMMY_ADMIN_OWNER", "approved_by": null, "approved_at": null, "evidence": []},
+    "infrastructure_cdn": {"status": "pending", "owner": "DUMMY_INFRASTRUCTURE_OWNER", "approved_by": null, "approved_at": null, "evidence": []},
+    "recovery": {"status": "pending", "owner": "DUMMY_RECOVERY_OWNER", "approved_by": null, "approved_at": null, "evidence": []},
+    "rollback": {"status": "pending", "owner": "DUMMY_RELEASE_OWNER", "approved_by": null, "approved_at": null, "evidence": []},
+    "observability": {"status": "pending", "owner": "DUMMY_ON_CALL_OWNER", "approved_by": null, "approved_at": null, "evidence": []},
+    "content_legal": {"status": "pending", "owner": "DUMMY_CONTENT_LEGAL_OWNER", "approved_by": null, "approved_at": null, "evidence": []}
+  }
+}

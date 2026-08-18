@@ -1,0 +1,16 @@
+{
+  "name": "apex-cinema",
+  "private": true,
+  "workspaces": ["apps/web"],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=@apex/web",
+    "build:web": "npm run build --workspace=@apex/web",
+    "lint:web": "npm run lint --workspace=@apex/web",
+    "typecheck:web": "npm run typecheck --workspace=@apex/web",
+    "test:web": "npm run test --workspace=@apex/web",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}

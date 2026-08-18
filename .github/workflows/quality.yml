@@ -1,0 +1,122 @@
+name: Quality and security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.10-alpine3.23
+        env:
+          POSTGRES_DB: aperture_ci
+          POSTGRES_USER: aperture_ci
+          POSTGRES_PASSWORD: aperture_ci_password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U aperture_ci -d aperture_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:8.8.1-alpine3.23
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      minio:
+        image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+        env:
+          MINIO_ROOT_USER: aperture_ci
+          MINIO_ROOT_PASSWORD: aperture_ci_storage_password
+        ports: ["9000:9000"]
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/live"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgresql+psycopg://aperture_ci:aperture_ci_password@127.0.0.1:5432/aperture_ci
+      REDIS_URL: redis://127.0.0.1:6379/0
+      S3_ENDPOINT: http://127.0.0.1:9000
+      S3_PUBLIC_ENDPOINT: http://127.0.0.1:9000
+      S3_BUCKET: aperture-ci
+      S3_ACCESS_KEY: aperture_ci
+      S3_SECRET_KEY: aperture_ci_storage_password
+      SESSION_SECRET: ci_only_session_secret_at_least_32_characters
+      GEO_ASSERTION_SECRET: ci_only_geo_secret_at_least_32_characters
+      CAPTCHA_REQUIRED: "false"
+      CAPTCHA_TEST_MODE: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/api/requirements-dev.lock
+      - run: python -m pip install --requirement apps/api/requirements-dev.lock
+      - name: Audit locked dependencies
+        run: |
+          pip-audit --requirement apps/api/requirements.lock
+          pip-audit --requirement apps/api/requirements-dev.lock
+      - name: Prepare database and private object bucket
+        working-directory: apps/api
+        run: |
+          python -c 'import boto3, os; boto3.client("s3", endpoint_url=os.environ["S3_ENDPOINT"], aws_access_key_id=os.environ["S3_ACCESS_KEY"], aws_secret_access_key=os.environ["S3_SECRET_KEY"]).create_bucket(Bucket=os.environ["S3_BUCKET"])'
+          alembic upgrade head
+          alembic check
+      - name: API quality and regression suite
+        working-directory: apps/api
+        run: |
+          ruff check .
+          pytest -q
+
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm run typecheck:web
+      - run: npm run lint:web
+      - run: npm run test:web
+      - run: npm run build:web
+
+  deployment-controls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate Hostinger topology and operations
+        run: |
+          python deploy/production/hostinger/validate_config.py --input deploy/production/hostinger/credentials.example.env --mode dummy
+          COMPOSE_PROFILES=operations docker compose --env-file deploy/production/hostinger/credentials.example.env -f deploy/production/hostinger/compose.yml config --format json > /tmp/hostinger-compose.json
+          python deploy/production/hostinger/validate_topology.py --input /tmp/hostinger-compose.json
+          HOSTINGER_RENDERED_COMPOSE=/tmp/hostinger-compose.json python -m unittest discover -s deploy/production/hostinger -p 'test_*.py'
+          (cd deploy/production/private-studio && python -m unittest discover -p 'test_*.py')
+      - name: Validate actual Caddy policy
+        run: |
+          docker run --rm -v "$PWD/deploy/production/hostinger:/etc/caddy:ro" -e WEB_HOSTNAME=stream.example.test -e ORIGIN_HOSTNAME=origin.example.test -e STORAGE_HOSTNAME=storage.example.test -e ACME_EMAIL=owner@example.test -e ORIGIN_EDGE_SECRET=origin-test-secret -e STUDIO_EDGE_SECRET=studio-test-secret caddy:2.10.2-alpine caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/caddy.json
+          python deploy/production/hostinger/validate_caddy_policy.py --input /tmp/caddy.json

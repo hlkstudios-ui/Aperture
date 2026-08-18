@@ -1,0 +1,345 @@
+# Substitute every labeled owner value before applying with:
+# doctl apps create --spec deploy/production/digitalocean/app.yaml
+name: aperture-production
+region: tor
+domains:
+  - domain: ${WEB_HOSTNAME}
+    type: PRIMARY
+    zone: ${DNS_ZONE}
+    minimum_tls_version: "1.2"
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
+ingress:
+  rules:
+    - component:
+        name: api
+      match:
+        path:
+          prefix: /api
+    - component:
+        name: web
+      match:
+        path:
+          prefix: /
+envs:
+  - key: WEB_ORIGIN
+    value: https://${WEB_HOSTNAME}
+    scope: RUN_AND_BUILD_TIME
+  - key: API_ORIGIN
+    value: https://${WEB_HOSTNAME}/api
+    scope: RUN_AND_BUILD_TIME
+  - key: NEXT_PUBLIC_API_ORIGIN
+    value: /api
+    scope: RUN_AND_BUILD_TIME
+  - key: NEXT_PUBLIC_OBJECT_STORAGE_ORIGIN
+    value: https://tor1.digitaloceanspaces.com
+    scope: RUN_AND_BUILD_TIME
+  - key: NEXT_PUBLIC_MEDIA_ORIGIN
+    value: https://${CDN_HOSTNAME}
+    scope: RUN_AND_BUILD_TIME
+  - key: NEXT_PUBLIC_FEATURE_SCENE_LENS_ENABLED
+    value: "${FEATURE_SCENE_LENS_ENABLED}"
+    scope: RUN_AND_BUILD_TIME
+  - key: NEXT_PUBLIC_FEATURE_ASK_MOVIE_ENABLED
+    value: "${FEATURE_ASK_MOVIE_ENABLED}"
+    scope: RUN_AND_BUILD_TIME
+  - key: NEXT_PUBLIC_FEATURE_COMMUNITY_ENABLED
+    value: "${FEATURE_COMMUNITY_ENABLED}"
+    scope: RUN_AND_BUILD_TIME
+  - key: NEXT_PUBLIC_FEATURE_WATCH_PARTIES_ENABLED
+    value: "${FEATURE_WATCH_PARTIES_ENABLED}"
+    scope: RUN_AND_BUILD_TIME
+  - key: NEXT_PUBLIC_FEATURE_EXPERIMENTAL_RECOMMENDATIONS_ENABLED
+    value: "${FEATURE_EXPERIMENTAL_RECOMMENDATIONS_ENABLED}"
+    scope: RUN_AND_BUILD_TIME
+  - key: POLICY_REQUIRE_APPROVED
+    value: "${POLICY_REQUIRE_APPROVED}"
+    scope: RUN_AND_BUILD_TIME
+  - key: PRIVATE_STUDIO_REQUIRED
+    value: "true"
+    scope: RUN_TIME
+  - key: ADMIN_WEB_ORIGIN
+    value: ${ADMIN_WEB_ORIGIN}
+    scope: RUN_TIME
+  - key: STUDIO_EDGE_SECRET
+    value: ${STUDIO_EDGE_SECRET}
+    scope: RUN_TIME
+    type: SECRET
+x-api-envs: &api-envs
+  - key: APP_ENV
+    value: production
+    scope: RUN_TIME
+  - key: DATABASE_URL
+    value: ${aperture-postgres.DATABASE_PRIVATE_URL}
+    scope: RUN_TIME
+    type: SECRET
+  - key: REDIS_URL
+    value: ${aperture-valkey.REDIS_URL}
+    scope: RUN_TIME
+    type: SECRET
+  - key: S3_ENDPOINT
+    value: https://tor1.digitaloceanspaces.com
+    scope: RUN_TIME
+  - key: S3_PUBLIC_ENDPOINT
+    value: https://tor1.digitaloceanspaces.com
+    scope: RUN_AND_BUILD_TIME
+  - key: S3_REGION
+    value: tor1
+    scope: RUN_TIME
+  - key: S3_BUCKET
+    value: ${SPACES_BUCKET}
+    scope: RUN_TIME
+  - key: BILLING_PROVIDER
+    value: stripe
+    scope: RUN_TIME
+  - key: SESSION_COOKIE_DOMAIN
+    value: .${DNS_ZONE}
+    scope: RUN_TIME
+  - key: S3_ACCESS_KEY
+    value: ${S3_ACCESS_KEY}
+    scope: RUN_TIME
+    type: SECRET
+  - key: S3_SECRET_KEY
+    value: ${S3_SECRET_KEY}
+    scope: RUN_TIME
+    type: SECRET
+  - key: SESSION_SECRET
+    value: ${SESSION_SECRET}
+    scope: RUN_TIME
+    type: SECRET
+  - key: METRICS_BEARER_TOKEN
+    value: ${METRICS_BEARER_TOKEN}
+    scope: RUN_TIME
+    type: SECRET
+  - key: STRIPE_SECRET_KEY
+    value: ${STRIPE_SECRET_KEY}
+    scope: RUN_TIME
+    type: SECRET
+  - key: STRIPE_WEBHOOK_SECRET
+    value: ${STRIPE_WEBHOOK_SECRET}
+    scope: RUN_TIME
+    type: SECRET
+  - key: SMTP_HOST
+    value: ${SMTP_HOST}
+    scope: RUN_TIME
+  - key: SMTP_PORT
+    value: ${SMTP_PORT}
+    scope: RUN_TIME
+  - key: SMTP_USERNAME
+    value: ${SMTP_USERNAME}
+    scope: RUN_TIME
+    type: SECRET
+  - key: SMTP_PASSWORD
+    value: ${SMTP_PASSWORD}
+    scope: RUN_TIME
+    type: SECRET
+  - key: SMTP_FROM_EMAIL
+    value: ${SMTP_FROM_EMAIL}
+    scope: RUN_TIME
+  - key: SMTP_STARTTLS
+    value: "true"
+    scope: RUN_TIME
+  - key: ERROR_TRACKING_DSN
+    value: ${ERROR_TRACKING_DSN}
+    scope: RUN_TIME
+    type: SECRET
+  - key: QUEUE_BACKLOG_ALERT_THRESHOLD
+    value: "25"
+    scope: RUN_TIME
+  - key: QUEUED_JOB_AGE_ALERT_SECONDS
+    value: "300"
+    scope: RUN_TIME
+  - key: PROCESSING_FAILURE_ALERT_THRESHOLD
+    value: "3"
+    scope: RUN_TIME
+  - key: MEDIA_DELIVERY_MODE
+    value: cdn
+    scope: RUN_TIME
+  - key: CDN_PUBLIC_ORIGIN
+    value: https://${CDN_HOSTNAME}
+    scope: RUN_TIME
+  - key: CDN_SIGNING_SECRET
+    value: ${CDN_SIGNING_SECRET}
+    scope: RUN_TIME
+    type: SECRET
+  - key: CDN_ORIGIN_SECRET
+    value: ${CDN_ORIGIN_SECRET}
+    scope: RUN_TIME
+    type: SECRET
+  - key: GEO_ASSERTION_SECRET
+    value: ${GEO_ASSERTION_SECRET}
+    scope: RUN_TIME
+    type: SECRET
+  - key: GEO_ASSERTION_MAX_AGE_SECONDS
+    value: "120"
+    scope: RUN_TIME
+  - key: CDN_TOKEN_TTL_SECONDS
+    value: "300"
+    scope: RUN_TIME
+  - key: PLAYBACK_LEASE_SECONDS
+    value: "300"
+    scope: RUN_TIME
+  - key: FEATURE_SCENE_LENS_ENABLED
+    value: "${FEATURE_SCENE_LENS_ENABLED}"
+    scope: RUN_TIME
+  - key: FEATURE_ASK_MOVIE_ENABLED
+    value: "${FEATURE_ASK_MOVIE_ENABLED}"
+    scope: RUN_TIME
+  - key: FEATURE_COMMUNITY_ENABLED
+    value: "${FEATURE_COMMUNITY_ENABLED}"
+    scope: RUN_TIME
+  - key: FEATURE_WATCH_PARTIES_ENABLED
+    value: "${FEATURE_WATCH_PARTIES_ENABLED}"
+    scope: RUN_TIME
+  - key: FEATURE_EXPERIMENTAL_RECOMMENDATIONS_ENABLED
+    value: "${FEATURE_EXPERIMENTAL_RECOMMENDATIONS_ENABLED}"
+    scope: RUN_TIME
+  - key: MEDIA_JOB_LEASE_SECONDS
+    value: "300"
+    scope: RUN_TIME
+  - key: MEDIA_JOB_MAX_ATTEMPTS
+    value: "3"
+    scope: RUN_TIME
+  - key: SCENE_JOB_LEASE_SECONDS
+    value: "300"
+    scope: RUN_TIME
+  - key: SCENE_JOB_MAX_ATTEMPTS
+    value: "3"
+    scope: RUN_TIME
+  - key: MALWARE_SCANNER_MODE
+    value: clamav_tcp
+    scope: RUN_TIME
+  - key: MALWARE_SCANNER_HOST
+    value: ${MALWARE_SCANNER_HOST}
+    scope: RUN_TIME
+  - key: MALWARE_SCANNER_PORT
+    value: "${MALWARE_SCANNER_PORT}"
+    scope: RUN_TIME
+  - key: MALWARE_SCANNER_TIMEOUT_SECONDS
+    value: "30"
+    scope: RUN_TIME
+x-backup-envs: &backup-envs
+  - key: BACKUP_DATABASE_URL
+    value: ${aperture-postgres.DATABASE_PRIVATE_URL}
+    scope: RUN_TIME
+    type: SECRET
+  - key: BACKUP_S3_ENDPOINT
+    value: https://tor1.digitaloceanspaces.com
+    scope: RUN_TIME
+  - key: BACKUP_S3_REGION
+    value: tor1
+    scope: RUN_TIME
+  - key: BACKUP_S3_BUCKET
+    value: ${BACKUP_S3_BUCKET}
+    scope: RUN_TIME
+  - key: BACKUP_S3_ACCESS_KEY
+    value: ${BACKUP_S3_ACCESS_KEY}
+    scope: RUN_TIME
+    type: SECRET
+  - key: BACKUP_S3_SECRET_KEY
+    value: ${BACKUP_S3_SECRET_KEY}
+    scope: RUN_TIME
+    type: SECRET
+databases:
+  - name: aperture-postgres
+    engine: PG
+    production: true
+    cluster_name: ${POSTGRES_CLUSTER_NAME}
+    db_name: aperture
+    db_user: aperture_app
+  - name: aperture-valkey
+    engine: VALKEY
+    production: true
+    cluster_name: ${VALKEY_CLUSTER_NAME}
+jobs:
+  - name: migrate
+    kind: PRE_DEPLOY
+    dockerfile_path: apps/api/Dockerfile
+    github:
+      repo: ${GITHUB_REPOSITORY}
+      branch: ${DEPLOY_BRANCH}
+      deploy_on_push: false
+    run_command: alembic upgrade head
+    instance_size_slug: apps-s-1vcpu-1gb
+    envs: *api-envs
+  - name: maintenance
+    kind: SCHEDULED
+    schedule:
+      cron: "*/5 * * * *"
+      time_zone: UTC
+    dockerfile_path: apps/api/Dockerfile
+    github:
+      repo: ${GITHUB_REPOSITORY}
+      branch: ${DEPLOY_BRANCH}
+      deploy_on_push: false
+    run_command: python scripts/maintenance.py
+    instance_size_slug: apps-s-1vcpu-1gb
+    envs: *api-envs
+  - name: production-preflight
+    kind: POST_DEPLOY
+    dockerfile_path: apps/api/Dockerfile
+    github:
+      repo: ${GITHUB_REPOSITORY}
+      branch: ${DEPLOY_BRANCH}
+      deploy_on_push: false
+    run_command: python scripts/production_preflight.py
+    instance_size_slug: apps-s-1vcpu-1gb
+    envs: *api-envs
+  - name: postgres-backup
+    kind: SCHEDULED
+    schedule:
+      cron: "17 3 * * *"
+      time_zone: UTC
+    dockerfile_path: deploy/production/digitalocean/backup.Dockerfile
+    github:
+      repo: ${GITHUB_REPOSITORY}
+      branch: ${DEPLOY_BRANCH}
+      deploy_on_push: false
+    instance_size_slug: apps-s-1vcpu-1gb
+    envs: *backup-envs
+services:
+  - name: api
+    dockerfile_path: apps/api/Dockerfile
+    github:
+      repo: ${GITHUB_REPOSITORY}
+      branch: ${DEPLOY_BRANCH}
+      deploy_on_push: false
+    instance_count: 2
+    instance_size_slug: apps-s-1vcpu-2gb
+    http_port: 8000
+    health_check:
+      http_path: /ready
+    envs: *api-envs
+  - name: web
+    dockerfile_path: apps/web/Dockerfile
+    github:
+      repo: ${GITHUB_REPOSITORY}
+      branch: ${DEPLOY_BRANCH}
+      deploy_on_push: false
+    instance_count: 2
+    instance_size_slug: apps-s-1vcpu-2gb
+    http_port: 3000
+    health_check:
+      http_path: /
+workers:
+  - name: media-worker
+    dockerfile_path: apps/api/Dockerfile
+    github:
+      repo: ${GITHUB_REPOSITORY}
+      branch: ${DEPLOY_BRANCH}
+      deploy_on_push: false
+    run_command: python -m app.media_worker
+    instance_count: 2
+    instance_size_slug: apps-c-2vcpu-4gb
+    envs: *api-envs
+  - name: scene-worker
+    dockerfile_path: apps/api/Dockerfile
+    github:
+      repo: ${GITHUB_REPOSITORY}
+      branch: ${DEPLOY_BRANCH}
+      deploy_on_push: false
+    run_command: python -m app.scene_worker
+    instance_count: 2
+    instance_size_slug: apps-s-1vcpu-2gb
+    envs: *api-envs

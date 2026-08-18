@@ -1,0 +1,21 @@
+.viewer-auth-card { width: min(980px, 100%); }
+.auth-form-experience { display: block; }
+.auth-form-experience.has-remembered { display: grid; grid-template-columns: minmax(240px,.72fr) minmax(390px,1.28fr); gap: 2rem; margin-top: 1.6rem; }
+.has-remembered .social-auth { margin-top: 0; }
+.remembered-accounts { padding: 1.25rem; border: 1px solid rgba(255,255,255,.09); border-radius: 18px; background: linear-gradient(155deg,rgba(229,116,94,.1),rgba(255,255,255,.025)); }
+.remembered-accounts header h2 { margin: .35rem 0; font: 400 1.55rem/1.05 Georgia,serif; }
+.remembered-accounts header small,.remembered-accounts>p { color: #77716c; font-size: .62rem; }
+.remembered-accounts>div { display: grid; gap: .55rem; margin: 1.2rem 0; }
+.remembered-accounts article { position: relative; }
+.remembered-choice { display: flex; width: 100%; align-items: center; gap: .75rem; padding: .7rem 2rem .7rem .7rem; border: 1px solid rgba(255,255,255,.08); border-radius: 13px; color: #eee8e2; background: rgba(5,5,5,.28); cursor: pointer; text-align: left; transition: .18s ease; }
+.remembered-choice:hover { border-color: rgba(229,116,94,.5); background: rgba(229,116,94,.09); transform: translateX(3px); }
+.remembered-choice>i { display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; border-radius: 12px; color: #fff; background: linear-gradient(145deg,#d86d58,#652b23); font-style: normal; font-weight: 900; }
+.remembered-choice>span { display: grid; min-width: 0; gap: 2px; }
+.remembered-choice strong,.remembered-choice small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remembered-choice strong { font-size: .78rem; }
+.remembered-choice small { color: #99918a; font-size: .62rem; }
+.remembered-choice em { color: #d47b68; font-size: .55rem; font-style: normal; text-transform: capitalize; }
+.forget-account { position: absolute; top: 8px; right: 7px; width: 25px; height: 25px; border: 0; border-radius: 50%; color: #867f79; background: transparent; cursor: pointer; font-size: 1rem; }
+.forget-account:hover { color: #fff; background: rgba(255,255,255,.09); }
+@media(max-width:780px) { .auth-form-experience.has-remembered { grid-template-columns: 1fr; } .remembered-accounts>div { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media(max-width:520px) { .remembered-accounts>div { grid-template-columns: 1fr; } }

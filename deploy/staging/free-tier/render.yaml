@@ -1,0 +1,63 @@
+services:
+  - type: web
+    name: aperture-free-staging-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./deploy/staging/free-tier/api.Dockerfile
+    dockerContext: .
+    healthCheckPath: /ready
+    autoDeployTrigger: "off"
+    envVars:
+      - { key: APP_ENV, value: staging }
+      - { key: API_ORIGIN, sync: false }
+      - { key: WEB_ORIGIN, sync: false }
+      - { key: DATABASE_URL, sync: false }
+      - { key: REDIS_URL, sync: false }
+      - { key: S3_ENDPOINT, sync: false }
+      - { key: S3_PUBLIC_ENDPOINT, sync: false }
+      - { key: S3_REGION, value: auto }
+      - { key: S3_BUCKET, sync: false }
+      - { key: S3_ACCESS_KEY, sync: false }
+      - { key: S3_SECRET_KEY, sync: false }
+      - { key: SESSION_SECRET, sync: false }
+      - { key: SESSION_COOKIE_DOMAIN, sync: false }
+      - { key: METRICS_BEARER_TOKEN, sync: false }
+      - { key: GEO_ASSERTION_SECRET, sync: false }
+      - { key: SMTP_HOST, sync: false }
+      - { key: SMTP_PORT, value: "587" }
+      - { key: SMTP_USERNAME, sync: false }
+      - { key: SMTP_PASSWORD, sync: false }
+      - { key: SMTP_FROM_EMAIL, sync: false }
+      - { key: SMTP_STARTTLS, value: "true" }
+      - { key: ERROR_TRACKING_DSN, sync: false }
+      - { key: BILLING_PROVIDER, value: staging_unconfigured }
+      - { key: MALWARE_SCANNER_MODE, value: eicar }
+      - { key: MEDIA_DELIVERY_MODE, value: api_proxy }
+      - { key: UPLOAD_MAX_BYTES, value: "52428800" }
+      - { key: FEATURE_SCENE_LENS_ENABLED, sync: false }
+      - { key: FEATURE_ASK_MOVIE_ENABLED, sync: false }
+      - { key: FEATURE_COMMUNITY_ENABLED, sync: false }
+      - { key: FEATURE_WATCH_PARTIES_ENABLED, sync: false }
+      - { key: FEATURE_EXPERIMENTAL_RECOMMENDATIONS_ENABLED, sync: false }
+
+  - type: web
+    name: aperture-free-staging-web
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build:web
+    startCommand: npm run start --workspace=@apex/web -- --port $PORT
+    healthCheckPath: /
+    autoDeployTrigger: "off"
+    envVars:
+      - { key: NODE_VERSION, value: 20.19.5 }
+      - { key: API_ORIGIN, sync: false }
+      - { key: NEXT_PUBLIC_API_ORIGIN, sync: false }
+      - { key: NEXT_PUBLIC_OBJECT_STORAGE_ORIGIN, sync: false }
+      - { key: NEXT_PUBLIC_MEDIA_ORIGIN, sync: false }
+      - { key: WEB_ORIGIN, sync: false }
+      - { key: POLICY_REQUIRE_APPROVED, value: "false" }
+      - { key: NEXT_PUBLIC_FEATURE_SCENE_LENS_ENABLED, sync: false }
+      - { key: NEXT_PUBLIC_FEATURE_ASK_MOVIE_ENABLED, sync: false }
+      - { key: NEXT_PUBLIC_FEATURE_COMMUNITY_ENABLED, sync: false }
+      - { key: NEXT_PUBLIC_FEATURE_WATCH_PARTIES_ENABLED, sync: false }
+      - { key: NEXT_PUBLIC_FEATURE_EXPERIMENTAL_RECOMMENDATIONS_ENABLED, sync: false }

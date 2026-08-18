@@ -1,0 +1,13 @@
+{
+  "package_version": 1,
+  "documents": [
+    {"slug":"privacy","title":"Privacy Notice","status":"awaiting_owner_approval","version":"DUMMY_PENDING","effective_at":null,"approved_by":null,"sections":[]},
+    {"slug":"terms","title":"Terms of Service","status":"awaiting_owner_approval","version":"DUMMY_PENDING","effective_at":null,"approved_by":null,"sections":[]},
+    {"slug":"copyright-takedown","title":"Copyright and Takedown Process","status":"awaiting_owner_approval","version":"DUMMY_PENDING","effective_at":null,"approved_by":null,"sections":[]},
+    {"slug":"cookies-analytics","title":"Cookies and Analytics Disclosure","status":"awaiting_owner_approval","version":"DUMMY_PENDING","effective_at":null,"approved_by":null,"sections":[]},
+    {"slug":"accessibility","title":"Accessibility Statement","status":"awaiting_owner_approval","version":"DUMMY_PENDING","effective_at":null,"approved_by":null,"sections":[]},
+    {"slug":"community-rules","title":"Community Rules","status":"awaiting_owner_approval","version":"DUMMY_PENDING","effective_at":null,"approved_by":null,"sections":[]},
+    {"slug":"subscription-refunds","title":"Subscription, Cancellation, and Refund Terms","status":"awaiting_owner_approval","version":"DUMMY_PENDING","effective_at":null,"approved_by":null,"sections":[]},
+    {"slug":"data-requests","title":"Data Request Procedure","status":"awaiting_owner_approval","version":"DUMMY_PENDING","effective_at":null,"approved_by":null,"sections":[]}
+  ]
+}

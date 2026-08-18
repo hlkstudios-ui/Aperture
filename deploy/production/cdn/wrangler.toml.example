@@ -1,0 +1,11 @@
+name = "aperture-protected-media"
+main = "worker.js"
+compatibility_date = "2026-08-01"
+
+[vars]
+ORIGIN_API = "https://DUMMY_watch.example.com/api"
+WEB_ORIGIN = "https://DUMMY_watch.example.com"
+TOKEN_TTL_SECONDS = "300"
+
+# Add CDN_SIGNING_SECRET and CDN_ORIGIN_SECRET with `wrangler secret put`.
+# Use the exact values injected into the Hostinger API service; never commit them.

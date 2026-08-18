@@ -1,0 +1,39 @@
+{
+  "name": "@apex/web",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0 --port 3000",
+    "build": "node scripts/validate-policies.mjs && next build",
+    "start": "next start --hostname 0.0.0.0 --port 3000",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "hash-wasm": "^4.12.0",
+    "hls.js": "^1.7.0",
+    "i18n-iso-countries": "^7.14.0",
+    "next": "16.3.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.2",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.2",
+    "@types/node": "20.19.33",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "5.1.4",
+    "eslint": "9.39.2",
+    "eslint-config-next": "16.3.1",
+    "jsdom": "26.1.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.56.1",
+    "vitest": "4.1.0"
+  }
+}

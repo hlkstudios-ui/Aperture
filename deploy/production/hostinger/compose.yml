@@ -1,0 +1,453 @@
+name: aperture-production
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-hardened-runtime: &hardened-runtime
+  read_only: true
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  tmpfs: [/tmp:size=512m,mode=1777]
+
+x-api-environment: &api-environment
+  APP_ENV: production
+  WEB_ORIGIN: https://${WEB_HOSTNAME}
+  API_ORIGIN: https://${WEB_HOSTNAME}/api
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+  REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+  S3_ENDPOINT: http://minio:9000
+  S3_PUBLIC_ENDPOINT: https://${STORAGE_HOSTNAME}
+  S3_REGION: us-east-1
+  S3_BUCKET: ${S3_BUCKET}
+  S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+  S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+  SESSION_SECRET: ${SESSION_SECRET}
+  SESSION_COOKIE_DOMAIN: .${DNS_ZONE}
+  ADMIN_WEB_ORIGIN: ${ADMIN_WEB_ORIGIN}
+  PRIVATE_STUDIO_REQUIRED: "true"
+  STUDIO_EDGE_SECRET: ${STUDIO_EDGE_SECRET}
+  SMTP_HOST: ${SMTP_HOST}
+  SMTP_PORT: ${SMTP_PORT}
+  SMTP_USERNAME: ${SMTP_USERNAME}
+  SMTP_PASSWORD: ${SMTP_PASSWORD}
+  SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
+  SMTP_STARTTLS: "true"
+  BILLING_PROVIDER: stripe
+  STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+  STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+  ERROR_TRACKING_DSN: ${ERROR_TRACKING_DSN}
+  METRICS_BEARER_TOKEN: ${METRICS_BEARER_TOKEN}
+  MEDIA_DELIVERY_MODE: cdn
+  CDN_PUBLIC_ORIGIN: https://${CDN_HOSTNAME}
+  CDN_SIGNING_SECRET: ${CDN_SIGNING_SECRET}
+  CDN_ORIGIN_SECRET: ${CDN_ORIGIN_SECRET}
+  CDN_TOKEN_TTL_SECONDS: 300
+  PLAYBACK_LEASE_SECONDS: 300
+  GEO_ASSERTION_SECRET: ${GEO_ASSERTION_SECRET}
+  GEO_ASSERTION_MAX_AGE_SECONDS: 120
+  MALWARE_SCANNER_MODE: clamav_tcp
+  MALWARE_SCANNER_HOST: clamav
+  MALWARE_SCANNER_PORT: 3310
+  TMDB_API_READ_ACCESS_TOKEN: ${TMDB_API_READ_ACCESS_TOKEN}
+  TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY}
+  CAPTCHA_REQUIRED: "true"
+  CAPTCHA_TEST_MODE: "false"
+
+x-api-service: &api-service
+  image: ${API_IMAGE}
+  restart: unless-stopped
+  environment: *api-environment
+  depends_on:
+    migrate: {condition: service_completed_successfully}
+    minio-init: {condition: service_completed_successfully}
+    redis: {condition: service_healthy}
+    clamav: {condition: service_healthy}
+  networks: [private]
+  logging: *default-logging
+  mem_limit: ${API_MEMORY_LIMIT:-1g}
+  cpus: ${API_CPU_LIMIT:-1.5}
+  pids_limit: 256
+  <<: *hardened-runtime
+
+services:
+  postgres:
+    image: postgres:17.10-alpine3.23
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [private]
+    logging: *default-logging
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-2g}
+    cpus: ${POSTGRES_CPU_LIMIT:-2.0}
+    pids_limit: 256
+    security_opt: [no-new-privileges:true]
+
+  redis:
+    image: redis:8.8.1-alpine3.23
+    restart: unless-stopped
+    command: [redis-server, --appendonly, "yes", --requirepass, "${REDIS_PASSWORD}", --maxmemory-policy, noeviction]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: [CMD-SHELL, "redis-cli -a '$${REDIS_PASSWORD}' ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks: [private]
+    logging: *default-logging
+    mem_limit: ${REDIS_MEMORY_LIMIT:-512m}
+    cpus: ${REDIS_CPU_LIMIT:-1.0}
+    pids_limit: 128
+    security_opt: [no-new-privileges:true]
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_API_CORS_ALLOW_ORIGIN: https://${WEB_HOSTNAME}
+    volumes: [minio-data:/data]
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:9000/minio/health/ready]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+    networks: [private]
+    logging: *default-logging
+    mem_limit: ${MINIO_MEMORY_LIMIT:-2g}
+    cpus: ${MINIO_CPU_LIMIT:-2.0}
+    pids_limit: 256
+    security_opt: [no-new-privileges:true]
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    restart: "no"
+    depends_on:
+      minio: {condition: service_healthy}
+    entrypoint: [/bin/sh, -ec]
+    command: >-
+      until mc alias set production http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do sleep 2; done;
+      mc mb --ignore-existing "production/$${S3_BUCKET}";
+      mc version enable "production/$${S3_BUCKET}";
+      mc anonymous set none "production/$${S3_BUCKET}"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      S3_BUCKET: ${S3_BUCKET}
+    networks: [private]
+    logging: *default-logging
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    security_opt: [no-new-privileges:true]
+
+  clamav:
+    image: clamav/clamav:1.4
+    restart: unless-stopped
+    volumes: [clamav-data:/var/lib/clamav]
+    healthcheck:
+      test: [CMD-SHELL, "printf 'PING\\n' | nc 127.0.0.1 3310 | grep PONG"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+    networks: [private]
+    logging: *default-logging
+    mem_limit: ${CLAMAV_MEMORY_LIMIT:-2g}
+    cpus: ${CLAMAV_CPU_LIMIT:-2.0}
+    pids_limit: 256
+    security_opt: [no-new-privileges:true]
+
+  migrate:
+    image: ${API_IMAGE}
+    restart: "no"
+    command: [alembic, upgrade, head]
+    environment: *api-environment
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [private]
+    logging: *default-logging
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 128
+    <<: *hardened-runtime
+
+  api:
+    <<: *api-service
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=4)"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  media-worker:
+    <<: *api-service
+    command: [python, -m, app.media_worker]
+    mem_limit: ${MEDIA_WORKER_MEMORY_LIMIT:-4g}
+    cpus: ${MEDIA_WORKER_CPU_LIMIT:-3.0}
+
+  scene-worker:
+    <<: *api-service
+    command: [python, -m, app.scene_worker]
+    mem_limit: ${SCENE_WORKER_MEMORY_LIMIT:-2g}
+    cpus: ${SCENE_WORKER_CPU_LIMIT:-2.0}
+
+  web:
+    image: ${WEB_IMAGE}
+    restart: unless-stopped
+    environment:
+      API_ORIGIN: http://api:8000
+      NEXT_PUBLIC_API_ORIGIN: https://${WEB_HOSTNAME}/api
+      NEXT_PUBLIC_OBJECT_STORAGE_ORIGIN: https://${STORAGE_HOSTNAME}
+      NEXT_PUBLIC_MEDIA_ORIGIN: https://${CDN_HOSTNAME}
+      WEB_ORIGIN: https://${WEB_HOSTNAME}
+      POLICY_REQUIRE_APPROVED: ${POLICY_REQUIRE_APPROVED}
+      PRIVATE_STUDIO_REQUIRED: "true"
+      STUDIO_EDGE_SECRET: ${STUDIO_EDGE_SECRET}
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://localhost:3000').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+    networks: [private]
+    logging: *default-logging
+    mem_limit: ${WEB_MEMORY_LIMIT:-1g}
+    cpus: ${WEB_CPU_LIMIT:-1.0}
+    pids_limit: 256
+    <<: *hardened-runtime
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    ports: ["80:8080", "443:8443", "443:8443/udp"]
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL}
+      WEB_HOSTNAME: ${WEB_HOSTNAME}
+      ORIGIN_HOSTNAME: ${ORIGIN_HOSTNAME}
+      ORIGIN_EDGE_SECRET: ${ORIGIN_EDGE_SECRET}
+      STUDIO_EDGE_SECRET: ${STUDIO_EDGE_SECRET}
+      STORAGE_HOSTNAME: ${STORAGE_HOSTNAME}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      web: {condition: service_healthy}
+      minio-init: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, caddy, validate, --config, /etc/caddy/Caddyfile]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [private]
+    logging: *default-logging
+    mem_limit: ${CADDY_MEMORY_LIMIT:-512m}
+    cpus: ${CADDY_CPU_LIMIT:-1.0}
+    pids_limit: 128
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp:size=64m,mode=1777]
+
+  maintenance:
+    profiles: [operations]
+    image: ${API_IMAGE}
+    command: [python, scripts/maintenance.py]
+    environment: *api-environment
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    networks: [private]
+    logging: *default-logging
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 128
+    <<: *hardened-runtime
+
+  preflight:
+    profiles: [operations]
+    image: ${API_IMAGE}
+    command: [python, scripts/production_preflight.py]
+    environment: *api-environment
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      minio-init: {condition: service_completed_successfully}
+      clamav: {condition: service_healthy}
+    networks: [private]
+    logging: *default-logging
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 128
+    <<: *hardened-runtime
+
+  backup:
+    profiles: [operations]
+    image: ${BACKUP_IMAGE}
+    environment:
+      BACKUP_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET}
+      BACKUP_S3_ACCESS_KEY: ${BACKUP_S3_ACCESS_KEY}
+      BACKUP_S3_SECRET_KEY: ${BACKUP_S3_SECRET_KEY}
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [private]
+    logging: *default-logging
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 128
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    tmpfs: [/tmp:size=8g,mode=1777]
+
+  restore:
+    profiles: [operations]
+    image: ${BACKUP_IMAGE}
+    command: ["/opt/aperture-backup/bin/python", "/app/production_restore_verify.py"]
+    env_file: [../../../.env]
+    networks: [private]
+    logging: *default-logging
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 128
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    tmpfs: [/tmp:size=8g,mode=1777]
+
+  replicate-media:
+    profiles: [operations]
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - |
+        mc alias set source http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        mc alias set replica "$${REPLICA_S3_ENDPOINT}" "$${REPLICA_S3_ACCESS_KEY}" "$${REPLICA_S3_SECRET_KEY}"
+        mc mb --ignore-existing "replica/$${REPLICA_S3_BUCKET}"
+        mc version enable "replica/$${REPLICA_S3_BUCKET}"
+        mc anonymous set none "replica/$${REPLICA_S3_BUCKET}"
+        mc mirror --overwrite --preserve "source/$${S3_BUCKET}" "replica/$${REPLICA_S3_BUCKET}"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      S3_BUCKET: ${S3_BUCKET}
+      REPLICA_S3_ENDPOINT: ${REPLICA_S3_ENDPOINT}
+      REPLICA_S3_ACCESS_KEY: ${REPLICA_S3_ACCESS_KEY}
+      REPLICA_S3_SECRET_KEY: ${REPLICA_S3_SECRET_KEY}
+      REPLICA_S3_BUCKET: ${REPLICA_S3_BUCKET}
+    depends_on:
+      minio: {condition: service_healthy}
+    networks: [private]
+    logging: *default-logging
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    tmpfs: [/tmp:size=512m,mode=1777]
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    restart: unless-stopped
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/containers/storage/.+)($|/)
+      - --collector.textfile.directory=/textfile
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+      - /var/lib/aperture/metrics:/textfile:ro
+    networks: [private]
+    logging: *default-logging
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    tmpfs: [/tmp:size=16m,mode=1777]
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    user: "0:0"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=10GB
+      - --web.enable-lifecycle=false
+    volumes:
+      - ./prometheus.local.yml:/etc/prometheus/prometheus.yml:ro
+      - ./blackbox-targets.local.yml:/etc/prometheus/blackbox-targets.yml:ro
+      - ../../../ops/prometheus-alerts.yml:/etc/prometheus/rules.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      api: {condition: service_healthy}
+      node-exporter: {condition: service_started}
+      blackbox: {condition: service_started}
+    healthcheck:
+      test: [CMD, promtool, check, config, /etc/prometheus/prometheus.yml]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks: [private]
+    logging: *default-logging
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 128
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    tmpfs: [/tmp:size=64m,mode=1777]
+
+  blackbox:
+    image: prom/blackbox-exporter:v0.27.0
+    restart: unless-stopped
+    command: [--config.file=/etc/blackbox/blackbox.yml]
+    volumes:
+      - ./blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    networks: [private]
+    logging: *default-logging
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    tmpfs: [/tmp:size=16m,mode=1777]
+
+networks:
+  private:
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  clamav-data:
+  caddy-data:
+  caddy-config:
+  prometheus-data:

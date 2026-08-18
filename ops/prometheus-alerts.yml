@@ -1,0 +1,122 @@
+groups:
+  - name: aperture-production
+    rules:
+      - alert: ApertureApiUnavailable
+        expr: absent(aperture_api_requests_total) == 1
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: Aperture API metrics are unavailable
+          runbook: docs/RUNBOOKS.md#bad-deployment
+      - alert: ApertureApiErrorRateHigh
+        expr: sum(rate(aperture_api_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(aperture_api_requests_total[5m])), 0.001) > 0.02
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: API 5xx rate exceeds 2%
+          runbook: docs/RUNBOOKS.md#bad-deployment
+      - alert: ApertureDatabaseUnavailable
+        expr: probe_success{job="aperture-readiness"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: Aperture readiness probe is failing
+          runbook: docs/RUNBOOKS.md#db-unavailable
+      - alert: ApertureMediaQueueBacklog
+        expr: aperture_queue_backlog{queue="media"} >= 25
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: Media processing queue is backlogged
+          runbook: docs/RUNBOOKS.md#queue-backlog
+      - alert: ApertureQueuedJobStale
+        expr: aperture_processing_oldest_queued_seconds >= 300
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: A media job has remained queued for five minutes
+          runbook: docs/RUNBOOKS.md#queue-backlog
+      - alert: ApertureProcessingFailures
+        expr: aperture_processing_failures_last_hour >= 3
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: Media processing failures breached threshold
+          runbook: docs/RUNBOOKS.md#failed-media-processing
+      - alert: ApertureStorageUnavailable
+        expr: aperture_storage_available == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: Object storage is unavailable
+          runbook: docs/RUNBOOKS.md#storage-unavailable
+      - alert: AperturePlaybackOriginErrors
+        expr: aperture_playback_errors_last_5m / clamp_min(aperture_playback_starts_last_5m, 1) > 0.02
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: Playback fatal-error rate exceeds 2%
+          runbook: docs/RUNBOOKS.md#cdnorigin-issue
+      - alert: ApertureAdminLoginDenials
+        expr: sum(increase(aperture_api_requests_total{route="/admin/auth/login",status="401"}[10m])) >= 10
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: Repeated administrator login denials detected
+          runbook: docs/RUNBOOKS.md#admin-lockout
+      - alert: ApertureHostAuditFailed
+        expr: absent(aperture_host_audit_pass) == 1 or aperture_host_audit_pass == 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: Host audit evidence is missing or failing
+          runbook: docs/RUNBOOKS.md#host-access-or-capacity-failure
+      - alert: ApertureHostDiskSpaceLow
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.15
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: Host root filesystem has less than 15% free space
+          runbook: docs/RUNBOOKS.md#host-access-or-capacity-failure
+      - alert: ApertureHostClockUnsynchronized
+        expr: node_timex_sync_status == 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: Host clock is not synchronized
+          runbook: docs/RUNBOOKS.md#host-access-or-capacity-failure
+      - alert: ApertureProductionBackupStale
+        expr: absent(aperture_operation_last_success_unixtime{operation="backup"}) == 1 or time() - aperture_operation_last_success_unixtime{operation="backup"} > 108000
+        for: 15m
+        labels: { severity: critical }
+        annotations:
+          summary: No successful production database backup within 30 hours
+          runbook: docs/RUNBOOKS.md#db-unavailable
+      - alert: ApertureMediaReplicationStale
+        expr: absent(aperture_operation_last_success_unixtime{operation="media_replication"}) == 1 or time() - aperture_operation_last_success_unixtime{operation="media_replication"} > 10800
+        for: 15m
+        labels: { severity: critical }
+        annotations:
+          summary: No successful off-site media replication within three hours
+          runbook: docs/RUNBOOKS.md#storage-unavailable
+      - alert: ApertureMaintenanceStale
+        expr: absent(aperture_operation_last_success_unixtime{operation="maintenance"}) == 1 or time() - aperture_operation_last_success_unixtime{operation="maintenance"} > 900
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: Bounded production maintenance has not succeeded within 15 minutes
+          runbook: docs/RUNBOOKS.md#bad-deployment
+      - alert: AperturePublicSurfaceUnavailable
+        expr: probe_success{job="aperture-public-edge"} == 0
+        for: 3m
+        labels: { severity: critical }
+        annotations:
+          summary: A required public surface, security-header contract, or origin-denial probe failed
+          runbook: docs/RUNBOOKS.md#cdnorigin-issue
+      - alert: ApertureCertificateExpiring
+        expr: probe_ssl_earliest_cert_expiry{job="aperture-public-edge"} - time() < 1209600
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: A public TLS certificate expires within 14 days
+          runbook: docs/RUNBOOKS.md#cdnorigin-issue

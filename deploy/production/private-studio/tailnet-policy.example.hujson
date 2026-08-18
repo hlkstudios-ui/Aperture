@@ -1,0 +1,20 @@
+{
+  "tagOwners": {
+    "tag:aperture-studio": ["autogroup:admin"]
+  },
+  "grants": [
+    {
+      "src": ["DUMMY_owner@example.com"],
+      "dst": ["tag:aperture-studio"],
+      "ip": ["tcp:443"]
+    }
+  ],
+  "ssh": [
+    {
+      "action": "check",
+      "src": ["DUMMY_owner@example.com"],
+      "dst": ["tag:aperture-studio"],
+      "users": ["autogroup:nonroot"]
+    }
+  ]
+}
