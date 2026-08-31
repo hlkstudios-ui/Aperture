@@ -49,6 +49,7 @@ from app.routes import (
     e2e_runtime,
     explore,
     homepage,
+    legal_policy,
     oauth,
     operations,
     passport,
@@ -241,6 +242,7 @@ app.include_router(explore.admin_router)
 app.include_router(homepage.router)
 app.include_router(site_brand.public_router)
 app.include_router(site_brand.admin_router)
+app.include_router(legal_policy.router)
 app.include_router(site_domains.public_router)
 app.include_router(site_domains.router)
 app.include_router(operations.router)

@@ -1,0 +1,328 @@
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, .65fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.form,
+.boundary {
+  border: 1px solid rgba(255, 255, 255, .11);
+  background: linear-gradient(145deg, rgba(22, 20, 18, .98), rgba(12, 12, 11, .98));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .2);
+}
+
+.form {
+  min-width: 0;
+  padding: clamp(1.2rem, 3vw, 2.5rem);
+}
+
+.formHeading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  align-items: end;
+  padding-block-end: 1.5rem;
+  border-block-end: 1px solid rgba(255, 255, 255, .09);
+}
+
+.formHeading h2 {
+  margin: .35rem 0 0;
+  max-width: 670px;
+  color: #eee6dc;
+  font: 400 clamp(1.8rem, 3vw, 3rem)/1 Georgia, serif;
+  letter-spacing: -.025em;
+}
+
+.formHeading > span {
+  flex: none;
+  color: #b5aca4;
+  font-size: .76rem;
+  line-height: 1.45;
+}
+
+.form fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 2rem 0;
+  border: 0;
+  border-block-end: 1px solid rgba(255, 255, 255, .09);
+}
+
+.form legend {
+  padding: 0;
+  color: #e7ddd4;
+  font: 400 1.3rem Georgia, serif;
+}
+
+.sectionIntro {
+  max-width: 760px;
+  margin: .55rem 0 1.3rem;
+  color: #b2a9a1;
+  font-size: .82rem;
+  line-height: 1.6;
+}
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.15rem;
+}
+
+.fieldGrid label,
+.ageField label {
+  display: grid;
+  min-width: 0;
+  gap: .5rem;
+  align-content: start;
+}
+
+.fieldGrid label > span,
+.ageField label > span {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: .35rem .8rem;
+  align-items: baseline;
+  color: #e4dbd2;
+  font-size: .84rem;
+}
+
+.fieldGrid input,
+.fieldGrid select,
+.ageField input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding-inline: .85rem;
+  border: 1px solid #6b5a50;
+  border-radius: 6px;
+  background: #0b0b0a;
+  color: #f2ebe3;
+  color-scheme: dark;
+  font: 400 .9rem/1.4 Arial, sans-serif;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.fieldGrid input::placeholder,
+.ageField input::placeholder {
+  color: #a19890;
+  opacity: 1;
+}
+
+.fieldGrid input:focus-visible,
+.fieldGrid select:focus-visible,
+.ageField input:focus-visible {
+  border-color: #ef8066;
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(239, 128, 102, .16);
+  background: #11100f;
+}
+
+.fieldGrid input:disabled,
+.fieldGrid select:disabled,
+.ageField input:disabled {
+  cursor: wait;
+  opacity: .62;
+}
+
+.fieldGrid select option {
+  background: #11100f;
+  color: #f2ebe3;
+}
+
+.fieldGrid small:not(.optional),
+.ageField small:not(.optional) {
+  color: #aaa19a;
+  font-size: .78rem;
+  line-height: 1.55;
+}
+
+.optional {
+  color: #df9584;
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.fullField {
+  grid-column: 1 / -1;
+}
+
+.ageField {
+  max-width: 360px;
+}
+
+.feedback {
+  min-height: 3.25rem;
+  padding-block-start: 1rem;
+}
+
+.feedback p {
+  margin: 0;
+  padding: .8rem 1rem;
+  border-radius: 6px;
+  font-size: .82rem;
+  line-height: 1.55;
+}
+
+.error {
+  color: #ffd0c7;
+  border: 1px solid #9b4e3f;
+  background: #351813;
+}
+
+.success {
+  color: #d0f0d6;
+  border: 1px solid #4f8057;
+  background: #142b1a;
+}
+
+.actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  padding-block-start: 1rem;
+}
+
+.actions > span {
+  color: #aaa19a;
+  font-size: .7rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.boundary {
+  position: sticky;
+  inset-block-start: 1rem;
+  padding: clamp(1.25rem, 2.5vw, 2rem);
+  overflow: hidden;
+}
+
+.boundary::before {
+  content: "";
+  position: absolute;
+  width: 260px;
+  height: 260px;
+  inset: -140px -100px auto auto;
+  border-radius: 50%;
+  background: rgba(221, 92, 66, .12);
+  filter: blur(35px);
+  pointer-events: none;
+}
+
+.lock {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  padding-inline: .7rem;
+  border: 1px solid #5c4038;
+  border-radius: 999px;
+  color: #f0a18f;
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+
+.boundary h2 {
+  margin: 1.2rem 0 .8rem;
+  color: #eee5dc;
+  font: 400 clamp(1.65rem, 2.5vw, 2.35rem)/1.05 Georgia, serif;
+}
+
+.boundary > p {
+  color: #b7aea6;
+  font-size: .82rem;
+  line-height: 1.65;
+}
+
+.boundary ol {
+  margin: 1.7rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.boundary li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: .7rem;
+  padding: 1rem 0;
+  border-block-start: 1px solid rgba(255, 255, 255, .09);
+}
+
+.boundary li > span {
+  color: #df8875;
+  font-size: .7rem;
+}
+
+.boundary li p {
+  display: grid;
+  gap: .3rem;
+  margin: 0;
+}
+
+.boundary li strong {
+  color: #e7ded5;
+  font-size: .8rem;
+}
+
+.boundary li small {
+  color: #aaa19a;
+  font-size: .74rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 1050px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .boundary {
+    position: static;
+  }
+
+  .boundary ol {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
+  .boundary li {
+    display: block;
+  }
+
+  .boundary li p {
+    margin-block-start: .6rem;
+  }
+}
+
+@media (max-width: 680px) {
+  .formHeading,
+  .actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .fieldGrid,
+  .boundary ol {
+    grid-template-columns: 1fr;
+  }
+
+  .fullField {
+    grid-column: auto;
+  }
+
+  .actions button {
+    width: 100%;
+    min-height: 48px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boundary::before {
+    filter: none;
+  }
+}

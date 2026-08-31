@@ -54,6 +54,7 @@ const navigationGroups: ReadonlyArray<StudioNavigationGroup> = [
       ["Operations", "/studio/operations"],
       ["Storage", "/studio/storage"],
       ["Launch Setup", "/studio/launch"],
+      ["Legal & policy", "/studio/legal-policy"],
       ["Domains", "/studio/domains"],
       ["Settings", "/studio/settings"],
     ],
@@ -68,7 +69,13 @@ const navigationIndex = new Map<string, number>(
 
 function Navigation({ active, setupOnly }: { active: string; setupOnly: boolean }) {
   const visibleGroups = setupOnly
-    ? [{ label: "Launch", items: [["Launch Setup", "/studio/launch"]] as const }]
+    ? [{
+      label: "Setup",
+      items: [
+        ["Launch Setup", "/studio/launch"],
+        ["Legal & policy", "/studio/legal-policy"],
+      ] as const,
+    }]
     : navigationGroups;
   return (
     <>

@@ -324,6 +324,48 @@ class SiteBrandConfiguration(Base):
     )
 
 
+class LegalPolicyConfiguration(Base):
+    __tablename__ = "legal_policy_configurations"
+    __table_args__ = (
+        CheckConstraint(
+            "site_brand_configuration_id = 1",
+            name="ck_legal_policy_configuration_single_site",
+        ),
+        CheckConstraint("revision >= 0", name="ck_legal_policy_configuration_revision"),
+        CheckConstraint(
+            "country_code IS NULL OR "
+            "(length(country_code) = 2 AND country_code = upper(country_code))",
+            name="ck_legal_policy_configuration_country_code",
+        ),
+        CheckConstraint(
+            "minimum_user_age IS NULL OR minimum_user_age BETWEEN 0 AND 120",
+            name="ck_legal_policy_configuration_minimum_user_age",
+        ),
+    )
+
+    site_brand_configuration_id: Mapped[int] = mapped_column(
+        ForeignKey("site_brand_configurations.id", ondelete="CASCADE"),
+        primary_key=True,
+        default=1,
+        server_default="1",
+    )
+    legal_operator_name: Mapped[str | None] = mapped_column(String(200))
+    country_code: Mapped[str | None] = mapped_column(String(2))
+    region: Mapped[str | None] = mapped_column(String(120))
+    support_email: Mapped[str | None] = mapped_column(String(320))
+    privacy_email: Mapped[str | None] = mapped_column(String(320))
+    copyright_email: Mapped[str | None] = mapped_column(String(320))
+    minimum_user_age: Mapped[int | None] = mapped_column(Integer)
+    governing_law_jurisdiction: Mapped[str | None] = mapped_column(String(200))
+    revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class SiteDomainStatus(StrEnum):
     provisioning = "provisioning"
     pending_dns = "pending_dns"

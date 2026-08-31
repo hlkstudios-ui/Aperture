@@ -33,6 +33,7 @@ describe("StudioShell first-run navigation", () => {
     }));
 
     expect(screen.getAllByRole("link", { name: /Launch Setup/ })).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: /Legal & policy/ })).toHaveLength(2);
     expect(screen.queryByRole("link", { name: /Dashboard/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Uploads/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Sign out" })).toHaveLength(2);
@@ -99,6 +100,25 @@ describe("StudioShell first-run navigation", () => {
     expect(links).toHaveLength(2);
     for (const link of links) {
       expect(link).toHaveAttribute("href", "/studio/domains");
+      expect(link).toHaveAttribute("aria-current", "page");
+    }
+  });
+
+  it("includes Legal & policy in both operational navigation surfaces", async () => {
+    vi.stubEnv("APP_ENV", "test");
+
+    render(await StudioShell({
+      admin: { email: "owner@example.test" },
+      active: "legal & policy",
+      eyebrow: "Owner workspace",
+      title: "Legal & policy",
+      children: <p>Private legal input form</p>,
+    }));
+
+    const links = screen.getAllByRole("link", { name: /Legal & policy/ });
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link).toHaveAttribute("href", "/studio/legal-policy");
       expect(link).toHaveAttribute("aria-current", "page");
     }
   });
