@@ -6,6 +6,10 @@ being verified, and after one is activated or removed, that Aperture-hosted addr
 fallback. Attaching a domain changes routing and public links only; it does not create a second
 catalog, Studio, customer database, or playback stack.
 
+Businesses renting Aperture require separate tenant cells and a control-plane hostname-to-cell
+mapping; adding more domains to this installation is not multi-business tenancy. The target model is
+documented in [Tenant monetization architecture](TENANT_MONETIZATION.md).
+
 This is registrar-neutral. A domain may be registered at Hostinger, GoDaddy, SiteGround,
 Namecheap, or another registrar. The records must be added wherever the domain's authoritative DNS
 is actually hosted, which can be different from the registrar.
@@ -128,4 +132,6 @@ hardening for a future multi-tenant service.
 The current repository intentionally has one `SiteBrandConfiguration` and no tenant key on users,
 catalog, billing, playback, storage, analytics, or caches. Therefore these domains are aliases for
 one installation. Hosting many unrelated business owners in one database requires tenant isolation
-across those domains before hostname routing can safely select different brands or data.
+across those domains before hostname routing can safely select different brands or data. Under the
+chosen near-term model, a future control plane must route each business hostname to its separately
+provisioned cell rather than selecting a different business inside this shared installation.

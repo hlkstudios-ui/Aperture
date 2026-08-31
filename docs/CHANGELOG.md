@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-08-31 — Tenant viewer-monetization foundation
+
+- Chose one isolated Aperture cell per tenant as the initial commercial boundary, with independent
+  database, Redis, storage/IAM, workers, secrets, provider connection, domains, backups, and
+  observability. Documented the future control-plane lifecycle and kept platform-rental billing
+  strictly separate from each tenant's viewer revenue.
+- Added a disabled-by-default, owner-only Customer payments workspace with Stripe-hosted Connect
+  onboarding and explicit provider-status refresh. Aperture stores only bounded non-secret account
+  state; it exposes no API-key or bank-detail form and never treats an onboarding return as payment
+  readiness.
+- Added immutable tenant-authored viewer plans: owners create validated monthly or annual plans and
+  archive-and-replace published terms instead of rewriting prices already referenced by customers.
+  The storefront remains free, and subscription activation is intentionally unavailable until
+  connected-account checkout, signed webhook reconciliation, entitlements, playback enforcement,
+  and paid-launch evidence ship together.
+
 ## 2026-08-29 — Hostinger first-party edge, storage, and exporter artifacts
 
 - Replaced the mutable upstream Caddy, MinIO server, Node Exporter, and Blackbox Exporter

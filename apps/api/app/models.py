@@ -324,6 +324,58 @@ class SiteBrandConfiguration(Base):
     )
 
 
+class ViewerPaymentConnection(Base):
+    """Non-secret payment-provider state for one isolated Aperture tenant cell."""
+
+    __tablename__ = "viewer_payment_connections"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_viewer_payment_connection_singleton"),
+        CheckConstraint(
+            "provider IN ('disabled', 'stripe_connect')",
+            name="ck_viewer_payment_connection_provider",
+        ),
+        CheckConstraint(
+            "access_mode IN ('free', 'subscription_required')",
+            name="ck_viewer_payment_connection_access_mode",
+        ),
+        CheckConstraint("revision >= 0", name="ck_viewer_payment_connection_revision"),
+        CheckConstraint(
+            "access_mode <> 'subscription_required' OR charges_enabled",
+            name="ck_viewer_payment_connection_subscription_requires_charges",
+        ),
+        CheckConstraint(
+            "provider <> 'disabled' OR "
+            "(stripe_connected_account_id IS NULL AND livemode IS NULL AND "
+            "NOT details_submitted AND NOT charges_enabled AND NOT payouts_enabled)",
+            name="ck_viewer_payment_connection_disabled_state",
+        ),
+        CheckConstraint(
+            "provider <> 'stripe_connect' OR stripe_connected_account_id IS NOT NULL",
+            name="ck_viewer_payment_connection_stripe_account",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1, server_default="1")
+    owner_admin_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("admins.id", ondelete="RESTRICT"), unique=True, index=True
+    )
+    provider: Mapped[str] = mapped_column(String(32), default="disabled", server_default="disabled")
+    access_mode: Mapped[str] = mapped_column(String(32), default="free", server_default="free")
+    stripe_connected_account_id: Mapped[str | None] = mapped_column(String(255), unique=True)
+    livemode: Mapped[bool | None] = mapped_column(Boolean)
+    details_submitted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    charges_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    payouts_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    requirements_due: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
+    revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    owner_admin: Mapped[Admin] = relationship(foreign_keys=[owner_admin_id])
+
+
 class LegalPolicyConfiguration(Base):
     __tablename__ = "legal_policy_configurations"
     __table_args__ = (

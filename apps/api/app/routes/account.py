@@ -31,6 +31,7 @@ from app.models import (
     Subscription,
     SubscriptionStatus,
     User,
+    ViewerPaymentConnection,
 )
 from app.site_domain_service import resolve_request_public_origin
 
@@ -47,6 +48,19 @@ ACTIVE_SUBSCRIPTION_STATES = (
     SubscriptionStatus.active,
     SubscriptionStatus.past_due,
 )
+VIEWER_MONETIZATION_BILLING_NOTICE = (
+    "Viewer monetization is isolated from legacy billing. Checkout and the legacy billing portal "
+    "remain disabled."
+)
+
+
+def _viewer_monetization_connection(db: DbSession) -> ViewerPaymentConnection | None:
+    return db.get(ViewerPaymentConnection, 1)
+
+
+def _require_legacy_billing_available(db: DbSession) -> None:
+    if _viewer_monetization_connection(db) is not None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, VIEWER_MONETIZATION_BILLING_NOTICE)
 
 
 def active_entitlements(db: DbSession, user_id: uuid.UUID) -> list[Entitlement]:
@@ -87,7 +101,31 @@ def dashboard(db: DbSession, user: Customer, current: CurrentSession) -> Account
             .order_by(DeviceSession.last_seen_at.desc())
         )
     )
-    provider = get_billing_provider()
+    viewer_payment_connection = _viewer_monetization_connection(db)
+    if viewer_payment_connection is not None:
+        billing = BillingState(
+            provider=viewer_payment_connection.provider,
+            production_ready=False,
+            checkout_available=False,
+            notice=VIEWER_MONETIZATION_BILLING_NOTICE,
+        )
+    else:
+        provider = get_billing_provider()
+        billing = BillingState(
+            provider=provider.name,
+            production_ready=provider.production_ready,
+            checkout_available=provider.production_ready,
+            notice=(
+                None
+                if provider.production_ready
+                else (
+                    "Payments are intentionally disabled for this launch. "
+                    "No payment can be accepted."
+                    if provider.name == "disabled"
+                    else "Billing is not configured and never simulates completed payment."
+                )
+            ),
+        )
     return AccountDashboardResponse(
         email=user.email,
         subscription=subscription,
@@ -109,19 +147,7 @@ def dashboard(db: DbSession, user: Customer, current: CurrentSession) -> Account
         plans=list(
             db.scalars(select(Plan).where(Plan.is_active.is_(True)).order_by(Plan.price_cents))
         ),
-        billing=BillingState(
-            provider=provider.name,
-            production_ready=provider.production_ready,
-            checkout_available=provider.production_ready,
-            notice=(
-                None if provider.production_ready else (
-                    "Payments are intentionally disabled for this launch. "
-                    "No payment can be accepted."
-                    if provider.name == "disabled"
-                    else "Billing is not configured and never simulates completed payment."
-                )
-            ),
-        ),
+        billing=billing,
     )
 
 
@@ -132,6 +158,7 @@ def checkout(
     db: DbSession,
     user: Customer,
 ) -> dict[str, str]:
+    _require_legacy_billing_available(db)
     existing = db.scalar(
         select(Subscription).where(
             Subscription.user_id == user.id,
@@ -159,6 +186,7 @@ def checkout(
 
 @router.post("/billing-portal")
 def billing_portal(request: Request, db: DbSession, user: Customer) -> dict[str, str]:
+    _require_legacy_billing_available(db)
     provider = get_billing_provider()
     subscription = db.scalar(
         select(Subscription)

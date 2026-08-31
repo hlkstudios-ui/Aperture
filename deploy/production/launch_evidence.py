@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-MIGRATION_HEAD = "20260831_0033"
+MIGRATION_HEAD = "20260831_0034"
 RECORD_VERSION = 2
 IMAGE_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 REQUIRED_GATES = {

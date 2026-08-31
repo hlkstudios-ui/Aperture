@@ -59,6 +59,8 @@ from app.routes import (
     scene_intelligence,
     site_brand,
     site_domains,
+    viewer_monetization,
+    viewer_plans,
 )
 
 settings = get_settings()
@@ -245,6 +247,8 @@ app.include_router(site_brand.admin_router)
 app.include_router(legal_policy.router)
 app.include_router(site_domains.public_router)
 app.include_router(site_domains.router)
+app.include_router(viewer_monetization.router)
+app.include_router(viewer_plans.router)
 app.include_router(operations.router)
 app.include_router(operations.admin_router)
 if settings.app_env == "test":

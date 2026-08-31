@@ -1,0 +1,104 @@
+.workspace { display:grid; gap:1.25rem; margin-top:1.5rem; }
+.moneyBoundary,.accessPanel,.providersSection,.plansSection,.bankBoundary { border:1px solid rgba(255,255,255,.1); border-radius:18px; background:#121210; }
+.moneyBoundary { display:grid; grid-template-columns:minmax(240px,.72fr) minmax(0,1.28fr); gap:1.5rem; padding:1.5rem; background:linear-gradient(125deg,#25140f 0,#151311 48%,#10100f 100%); }
+.moneyBoundary h2,.sectionHeading h2,.bankBoundary h2 { margin:.35rem 0 0; font:400 clamp(1.6rem,2.8vw,2.5rem)/1.08 Georgia,serif; }
+.moneyFlows { display:grid; gap:1px; overflow:hidden; border:1px solid rgba(255,255,255,.08); border-radius:12px; background:rgba(255,255,255,.08); }
+.moneyFlows article { display:grid; grid-template-columns:auto 1fr; gap:.9rem; padding:1rem; background:#11100f; }
+.moneyFlows span { color:#e88e7a; font-size:.6rem; letter-spacing:.12em; }
+.moneyFlows strong { font:400 1.05rem Georgia,serif; }
+.moneyFlows p,.accessPanel>p,.sectionIntro,.providerDetail,.bankBoundary p,.providerBoundary,.unavailableReason,.activationLocked p,.activationPanel p { margin:.4rem 0 0; color:#928a82; font-size:.7rem; line-height:1.6; }
+.notice { padding:1rem 1.2rem; border:1px solid rgba(218,145,83,.3); border-radius:12px; background:#24170e; }
+.notice strong { color:#e5ad79; }
+.notice p { margin:.3rem 0 0; color:#b4a394; }
+.accessPanel,.providersSection { padding:1.5rem; }
+.sectionHeading { display:flex; align-items:start; justify-content:space-between; gap:1rem; }
+.sectionHeading>span { flex:none; padding:.4rem .65rem; border:1px solid rgba(255,255,255,.14); border-radius:999px; color:#bdb3aa; font-size:.58rem; text-transform:uppercase; letter-spacing:.1em; }
+.sectionHeading>span[data-mode="free"] { border-color:rgba(123,190,137,.35); color:#a7d7b0; background:#142319; }
+.sectionHeading>span[data-mode="subscription_required"] { border-color:rgba(220,126,104,.38); color:#efa38f; background:#2b1612; }
+.activationLocked { margin-top:1.2rem; padding:1rem; border-inline-start:3px solid #8e675c; background:#181412; }
+.activationLocked strong { color:#e0d8d0; }
+.activationPanel { margin-top:1.2rem; border-top:1px solid rgba(255,255,255,.09); padding-top:1rem; }
+.activationPanel summary { cursor:pointer; color:#dfb8ad; font-weight:700; }
+.activationPanel form { display:grid; gap:.8rem; margin-top:1rem; }
+.activationPanel label { display:grid; gap:.45rem; color:#b2aaa2; font-size:.68rem; }
+.activationPanel input { max-width:420px; padding:.75rem; border:1px solid rgba(255,255,255,.15); border-radius:8px; background:#0c0c0b; color:white; }
+.activationPanel button { justify-self:start; }
+.providersSection { overflow:hidden; }
+.sectionIntro { max-width:760px; margin-top:.85rem; }
+.providerGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; margin-top:1.25rem; }
+.providerCard { min-width:0; padding:1.2rem; border:1px solid rgba(255,255,255,.09); border-radius:14px; background:#0e0e0d; }
+.providerCard[data-featured="true"] { grid-row:span 2; border-color:rgba(220,114,90,.35); background:linear-gradient(150deg,#1c100d,#0f0f0e 50%); }
+.providerHeader { display:flex; align-items:start; justify-content:space-between; gap:1rem; }
+.providerHeader>div>span { color:#8d847c; font-size:.56rem; text-transform:uppercase; letter-spacing:.12em; }
+.providerHeader h3 { margin:.35rem 0 0; font:400 1.45rem Georgia,serif; }
+.providerStatus { display:inline-flex; align-items:center; gap:.42rem; padding:.38rem .55rem; border:1px solid rgba(255,255,255,.13); border-radius:999px; color:#aaa199; font-size:.55rem; white-space:nowrap; }
+.providerStatus i { width:6px; height:6px; border-radius:50%; background:currentColor; }
+.providerStatus[data-tone="ready"] { color:#9fd2a9; border-color:#65a57255; background:#102016; }
+.providerStatus[data-tone="waiting"] { color:#dfb578; border-color:#b47d3855; background:#24190c; }
+.providerStatus[data-tone="attention"] { color:#e99683; border-color:#c25c4855; background:#29120e; }
+.capabilities { display:flex; flex-wrap:wrap; gap:.45rem; margin:1rem 0; padding:0; list-style:none; }
+.capabilities li { padding:.36rem .5rem; border:1px solid rgba(255,255,255,.09); border-radius:5px; color:#aaa198; font-size:.58rem; }
+.providerFacts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1px; margin:1rem 0; overflow:hidden; border:1px solid rgba(255,255,255,.08); border-radius:10px; background:rgba(255,255,255,.08); }
+.providerFacts div { min-width:0; padding:.8rem; background:#0b0b0a; }
+.providerFacts dt { color:#766f69; font-size:.53rem; text-transform:uppercase; letter-spacing:.1em; }
+.providerFacts dd { margin:.35rem 0 0; overflow-wrap:anywhere; color:#cec5bd; font-size:.68rem; }
+.providerFacts dd[data-tone="yes"] { color:#9fd2a9; }
+.providerFacts dd[data-tone="no"] { color:#d29a8c; }
+.requirements { margin:1rem 0; padding:1rem; border:1px solid rgba(213,129,91,.25); border-radius:10px; background:#20130e; }
+.requirements h4 { margin:0; font:400 1rem Georgia,serif; }
+.requirements ul { display:grid; gap:.65rem; margin:.8rem 0 0; padding:0; list-style:none; }
+.requirements li { display:grid; gap:.2rem; color:#d7c9c0; font-size:.68rem; }
+.requirements li span { color:#9f8f84; }
+.providerActions { display:flex; align-items:start; gap:.7rem; flex-wrap:wrap; margin-top:1rem; }
+.providerActions form { display:grid; gap:.35rem; }
+.providerActions small { color:#766f69; font-size:.58rem; }
+.providerBoundary { padding-top:1rem; border-top:1px solid rgba(255,255,255,.08); }
+.providerBoundary strong { color:#d3c5bc; }
+.unavailableReason { max-width:520px; }
+.feedback { min-height:.2rem; }
+.feedback p { max-width:520px; margin:.25rem 0 0; font-size:.64rem; line-height:1.5; }
+.error { color:#f1a08e; }
+.success { color:#9fd2a9; }
+.bankBoundary { display:grid; grid-template-columns:auto 1fr; align-items:center; gap:1.2rem; padding:1.5rem; }
+.bankBoundary>span { display:grid; width:68px; aspect-ratio:1; place-items:center; border:1px solid rgba(255,255,255,.12); border-radius:50%; color:#d59684; font:700 .62rem/1 Arial,sans-serif; letter-spacing:.12em; }
+.plansSection { padding:1.5rem; }
+.immutableNotice { margin-top:1rem; padding:1rem; border-inline-start:3px solid #d17c68; background:#1a1210; }
+.immutableNotice strong { color:#e8d8d1; }
+.immutableNotice p,.planForm fieldset>p,.planCard>p,.archivePanel>p,.archivedNote,.planEmpty p,.archivedPlans>p { margin:.35rem 0 0; color:#938981; font-size:.68rem; line-height:1.55; }
+.planWorkspace { display:grid; grid-template-columns:minmax(300px,.8fr) minmax(0,1.2fr); gap:1rem; margin-top:1rem; align-items:start; }
+.planForm,.planList { min-width:0; padding:1.1rem; border:1px solid rgba(255,255,255,.09); border-radius:14px; background:#0e0e0d; }
+.planForm fieldset { min-width:0; margin:0 0 1rem; padding:0; border:0; }
+.planForm legend { padding:0; font:400 1.35rem Georgia,serif; }
+.planFields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.85rem; margin-top:1rem; }
+.planFields label,.archivePanel label { display:grid; gap:.38rem; color:#aaa198; font-size:.65rem; }
+.planFields input,.planFields select,.planFields textarea,.archivePanel input { width:100%; min-width:0; padding:.72rem; border:1px solid rgba(255,255,255,.13); border-radius:8px; background:#090909; color:#f3ede7; font:inherit; }
+.planFields textarea { resize:vertical; }
+.planFields small { color:#766f69; font-size:.57rem; line-height:1.45; }
+.planFields .fullField { grid-column:1/-1; }
+.planList { display:grid; gap:.8rem; }
+.planListHeading { display:flex; align-items:center; justify-content:space-between; }
+.planListHeading h3 { margin:0; font:400 1.35rem Georgia,serif; }
+.planListHeading span,.archivedPlans summary span { color:#9a9188; font-size:.62rem; }
+.planCard { min-width:0; padding:1rem; border:1px solid rgba(255,255,255,.09); border-radius:11px; background:#11100f; }
+.planCard[data-active="true"] { border-color:rgba(114,176,127,.25); }
+.planCard>header { display:flex; align-items:start; justify-content:space-between; gap:1rem; }
+.planCard>header span { color:#8c837a; font-size:.54rem; text-transform:uppercase; letter-spacing:.1em; }
+.planCard h3 { margin:.25rem 0 0; font:400 1.2rem Georgia,serif; }
+.planCard code { max-width:45%; overflow-wrap:anywhere; color:#d59786; font-size:.6rem; }
+.planFacts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1px; margin:1rem 0 0; background:rgba(255,255,255,.07); }
+.planFacts div { min-width:0; padding:.65rem; background:#0b0b0a; }
+.planFacts dt { color:#756e68; font-size:.5rem; text-transform:uppercase; letter-spacing:.09em; }
+.planFacts dd { margin:.25rem 0 0; color:#c9c0b8; font-size:.62rem; overflow-wrap:anywhere; }
+.archivePanel { margin-top:1rem; padding-top:.8rem; border-top:1px solid rgba(255,255,255,.08); }
+.archivePanel summary { cursor:pointer; color:#d79a89; font-size:.65rem; }
+.archivePanel form { display:grid; gap:.7rem; margin-top:.8rem; }
+.archiveButton { justify-self:start; padding:.6rem .8rem; border:1px solid #b9574655; border-radius:7px; background:#29120f; color:#f0a18f; }
+.archiveButton:disabled { opacity:.45; }
+.archivedNote { padding-top:.8rem; border-top:1px solid rgba(255,255,255,.07); }
+.planEmpty { padding:1.2rem; border:1px dashed rgba(255,255,255,.12); border-radius:10px; text-align:center; }
+.archivedPlans { margin-top:1rem; padding-top:1rem; border-top:1px solid rgba(255,255,255,.08); }
+.archivedPlans>summary { display:flex; justify-content:space-between; cursor:pointer; color:#bdb3aa; font:400 1rem Georgia,serif; }
+.archivedGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.8rem; margin-top:1rem; }
+@media(max-width:1000px){.planWorkspace{grid-template-columns:1fr}.planFacts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:900px){.moneyBoundary{grid-template-columns:1fr}.providerGrid,.archivedGrid{grid-template-columns:1fr}.providerCard[data-featured="true"]{grid-row:auto}}
+@media(max-width:600px){.moneyBoundary,.accessPanel,.providersSection,.plansSection,.bankBoundary{padding:1rem}.sectionHeading,.providerHeader,.planCard>header{align-items:start;flex-direction:column}.providerFacts,.planFields{grid-template-columns:1fr}.planFields .fullField{grid-column:auto}.bankBoundary{grid-template-columns:1fr}.providerActions{display:grid}.providerActions button{width:100%}.planCard code{max-width:100%}}

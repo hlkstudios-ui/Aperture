@@ -44,6 +44,7 @@ const navigationGroups: ReadonlyArray<StudioNavigationGroup> = [
       ["Analytics", "/studio/analytics"],
       ["Community", "/studio/community"],
       ["Users", "/studio/users"],
+      ["Customer payments", "/studio/monetization"],
       ["Subscriptions", "/studio/subscriptions"],
       ["Revenue", "/studio/revenue"],
     ],
@@ -74,6 +75,7 @@ function Navigation({ active, setupOnly }: { active: string; setupOnly: boolean 
       items: [
         ["Launch Setup", "/studio/launch"],
         ["Legal & policy", "/studio/legal-policy"],
+        ["Customer payments", "/studio/monetization"],
       ] as const,
     }]
     : navigationGroups;

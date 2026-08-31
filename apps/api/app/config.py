@@ -97,6 +97,9 @@ class Settings(BaseSettings):
     stripe_secret_key: str | None = None
     stripe_webhook_secret: str | None = None
     stripe_payouts_enabled: bool = False
+    stripe_connect_enabled: bool = False
+    stripe_connect_platform_secret_key: SecretStr | None = None
+    stripe_connect_webhook_secret: SecretStr | None = None
     analytics_retention_days: int = 90
     analytics_max_batch_size: int = 25
     error_tracking_dsn: str | None = None
@@ -225,6 +228,8 @@ class Settings(BaseSettings):
             raise ValueError(
                 "BILLING_PROVIDER must not use the development stub in staging/production"
             )
+        if self.stripe_connect_enabled and self.billing_provider != "disabled":
+            raise ValueError("STRIPE_CONNECT_ENABLED requires BILLING_PROVIDER=disabled")
         if self.billing_provider == "stripe" and not all(
             (self.stripe_secret_key, self.stripe_webhook_secret)
         ):
@@ -233,6 +238,38 @@ class Settings(BaseSettings):
             )
         if self.stripe_payouts_enabled and self.billing_provider != "stripe":
             raise ValueError("STRIPE_PAYOUTS_ENABLED requires BILLING_PROVIDER=stripe")
+        stripe_connect_key = (
+            self.stripe_connect_platform_secret_key.get_secret_value()
+            if self.stripe_connect_platform_secret_key is not None
+            else ""
+        )
+        stripe_connect_webhook = (
+            self.stripe_connect_webhook_secret.get_secret_value()
+            if self.stripe_connect_webhook_secret is not None
+            else ""
+        )
+        if self.stripe_connect_enabled and not (stripe_connect_key and stripe_connect_webhook):
+            raise ValueError(
+                "STRIPE_CONNECT_PLATFORM_SECRET_KEY and STRIPE_CONNECT_WEBHOOK_SECRET "
+                "are required when Stripe Connect is enabled"
+            )
+        if self.stripe_connect_enabled and not stripe_connect_key.startswith(
+            ("sk_test_", "sk_live_")
+        ):
+            raise ValueError("Stripe Connect requires a Stripe platform secret key")
+        if self.stripe_connect_enabled and not stripe_connect_webhook.startswith("whsec_"):
+            raise ValueError("Stripe Connect requires a webhook signing secret")
+        if self.stripe_connect_enabled and any(
+            value.lower().startswith((*placeholders, "dummy"))
+            for value in (stripe_connect_key, stripe_connect_webhook)
+        ):
+            raise ValueError("Stripe Connect credentials must not be placeholders")
+        if (
+            self.app_env == "production"
+            and self.stripe_connect_enabled
+            and not stripe_connect_key.startswith("sk_live_")
+        ):
+            raise ValueError("Production Stripe Connect requires a live platform secret key")
         if (
             self.app_env == "production"
             and self.billing_provider == "stripe"
@@ -408,9 +445,7 @@ class Settings(BaseSettings):
             and valid_cname_target
             and cloudflare_identifier.fullmatch(self.cloudflare_zone_id or "")
             and cloudflare_identifier.fullmatch(self.cloudflare_account_id or "")
-            and cloudflare_identifier.fullmatch(
-                self.cloudflare_site_domains_kv_namespace_id or ""
-            )
+            and cloudflare_identifier.fullmatch(self.cloudflare_site_domains_kv_namespace_id or "")
         )
 
 
