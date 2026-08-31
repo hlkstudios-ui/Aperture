@@ -1,4 +1,5 @@
 from typing import Annotated
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -6,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.auth import DbSession, require_admin, require_trusted_origin
 from app.catalog_models import Edition, Episode, Movie
+from app.config import get_settings
 from app.models import Admin, AuditLog, PlaybackSource, ProcessingJob, ProcessingState
 from app.playback_schemas import PlaybackSourceCreate, PlaybackSourceResponse
 
@@ -29,9 +31,24 @@ def create_source(
     db: DbSession,
     admin: AdminIdentity,
 ) -> PlaybackSource:
-    job = db.get(ProcessingJob, payload.processing_job_id)
-    if job is None or job.state is not ProcessingState.ready or not job.manifest_key:
+    job = db.get(ProcessingJob, payload.processing_job_id) if payload.processing_job_id else None
+    if payload.processing_job_id and (
+        job is None or job.state is not ProcessingState.ready or not job.manifest_key
+    ):
         raise HTTPException(status.HTTP_409_CONFLICT, "Processing job must be Ready")
+    if payload.external_manifest_url:
+        configured_origins = {
+            value.strip().rstrip("/")
+            for value in get_settings().media_source_origins.split(",")
+            if value.strip()
+        }
+        parsed = urlsplit(str(payload.external_manifest_url))
+        source_origin = f"{parsed.scheme}://{parsed.netloc}"
+        if source_origin not in configured_origins:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "CDN origin is not approved. Add it to MEDIA_SOURCE_ORIGINS and restart Studio.",
+            )
     parent = db.get(Movie if payload.movie_id else Episode, payload.movie_id or payload.episode_id)
     if parent is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assigned title was not found")
@@ -46,7 +63,7 @@ def create_source(
                 status.HTTP_422_UNPROCESSABLE_CONTENT,
                 "Playback edition must belong to the assigned title",
             )
-    duration = job.duration_seconds or 0
+    duration = (job.duration_seconds if job else payload.duration_seconds) or 0
     markers = [
         payload.intro_end_seconds,
         payload.recap_end_seconds,
@@ -54,7 +71,12 @@ def create_source(
     ]
     if any(marker is not None and marker > duration for marker in markers):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Skip markers exceed duration")
-    source = PlaybackSource(**payload.model_dump())
+    values = payload.model_dump()
+    if payload.external_manifest_url is not None:
+        values["external_manifest_url"] = str(payload.external_manifest_url)
+    elif job is not None:
+        values["is_active"] = True
+    source = PlaybackSource(**values)
     db.add(source)
     db.flush()
     db.add(
@@ -64,7 +86,16 @@ def create_source(
             action="playback.source.assigned",
             outcome="succeeded",
             ip_address=request.client.host if request.client else None,
-            detail={"source_id": str(source.id), "processing_job_id": str(job.id)},
+            detail={
+                "source_id": str(source.id),
+                "origin": "processed" if job else "external_cdn",
+                "processing_job_id": str(job.id) if job else None,
+                "host": (
+                    payload.external_manifest_url.host
+                    if payload.external_manifest_url
+                    else None
+                ),
+            },
         )
     )
     try:
@@ -72,6 +103,6 @@ def create_source(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(
-            status.HTTP_409_CONFLICT, "The job or title already has a playback source"
+            status.HTTP_409_CONFLICT, "The job, title, or edition already has a playback source"
         ) from exc
     return source

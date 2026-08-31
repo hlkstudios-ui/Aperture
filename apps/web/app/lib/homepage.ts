@@ -1,4 +1,4 @@
-import { catalogFetch } from "@/app/lib/catalog";
+import { catalogFetch, type NamedRecord } from "@/app/lib/catalog";
 import { forwardedGeoHeaders } from "@/app/lib/geo-headers";
 import { cookies } from "next/headers";
 
@@ -8,8 +8,11 @@ export type HomepageTitle = {
   title: string;
   slug: string;
   short_description: string;
+  release_date: string | null;
   maturity_rating: string | null;
   runtime_minutes: number | null;
+  season_count: number | null;
+  genres: NamedRecord[];
   poster_url: string | null;
   backdrop_url: string | null;
   metadata_provider: string | null;

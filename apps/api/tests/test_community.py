@@ -21,7 +21,7 @@ def test_review_writes_are_rate_limited(monkeypatch) -> None:
     with SessionLocal() as db:
         movie = Movie(
             title=f"Rate Limit Film {token}",
-            slug=f"rate-limit-film-{token}",
+            slug=f"review-rate-film-{token}",
             short_description="Rate-limit fixture.",
             synopsis="Rate-limit fixture.",
             runtime_minutes=80,
@@ -75,7 +75,7 @@ def test_reviews_are_moderated_reportable_and_safety_filtered() -> None:
     with SessionLocal() as db:
         movie = Movie(
             title=f"Community Film {token}",
-            slug=f"community-film-{token}",
+            slug=f"moderated-film-{token}",
             short_description="A moderated community fixture.",
             synopsis="Community acceptance.",
             runtime_minutes=90,

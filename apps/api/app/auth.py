@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db import get_db
 from app.models import Admin, AdminSession, DeviceSession, User
+from app.site_domain_service import PUBLIC_ORIGIN_HEADER, resolve_request_public_origin
 
 password_hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4)
 DbSession = Annotated[Session, Depends(get_db)]
@@ -95,18 +96,27 @@ def require_admin(
     return session.admin
 
 
-def require_trusted_origin(request: Request) -> None:
+def require_trusted_origin(request: Request, db: DbSession) -> None:
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return
     origin = request.headers.get("origin")
-    allowed = {
-        str(get_settings().web_origin).rstrip("/"),
-        str(get_settings().api_origin).rstrip("/"),
-    }
     settings = get_settings()
+    allowed = {
+        str(settings.web_origin).rstrip("/"),
+        str(settings.api_origin).rstrip("/"),
+    }
     if getattr(settings, "admin_web_origin", None) is not None:
         allowed.add(str(settings.admin_web_origin).rstrip("/"))
+    if request.headers.get(PUBLIC_ORIGIN_HEADER) is not None:
+        resolve_request_public_origin(db, request, require_active=True)
+        return
+    if origin is not None and origin.rstrip("/") in allowed:
+        return
     if settings.app_env == "production" and origin is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Request origin is required")
-    if origin is not None and origin.rstrip("/") not in allowed:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Untrusted request origin")
+    if origin is None:
+        return
+    try:
+        resolve_request_public_origin(db, request, require_active=True)
+    except HTTPException as error:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Untrusted request origin") from error

@@ -1,0 +1,14 @@
+{
+  "os_id": "ubuntu",
+  "os_version": "24.04",
+  "hostname": "aperture-production",
+  "memory_gb": 15,
+  "disk_gb": 193,
+  "disk_free_gb": 188,
+  "time_synced": true,
+  "services": {"unattended-upgrades": true, "fail2ban": true, "docker": true},
+  "ssh": {"permitrootlogin": "no", "passwordauthentication": "no", "pubkeyauthentication": "yes"},
+  "ufw": "status: active\ndefault: deny (incoming), allow (outgoing)\n22/tcp allow 203.0.113.10/32\n80/tcp allow anywhere\n443/tcp allow anywhere\n443/udp allow anywhere",
+  "docker_daemon": {"live-restore": true, "no-new-privileges": true, "log-driver": "json-file", "log-opts": {"max-size": "10m", "max-file": "5"}},
+  "encrypted_volume": true
+}

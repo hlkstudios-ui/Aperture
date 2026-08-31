@@ -3,21 +3,20 @@
 import json
 import sys
 
+from e2e_guard import require_e2e_test_environment
 from sqlalchemy import func, select
 
 from app.catalog_models import Movie
-from app.config import get_settings
 from app.db import SessionLocal
 from app.models import AnalyticsEvent, PlaybackSource, Profile, User, WatchProgress
 
 
 def main() -> None:
+    require_e2e_test_environment()
     payload = json.load(sys.stdin)
     slug = payload["slug"]
-    if get_settings().app_env not in {"development", "test"} or not slug.startswith(
-        "e2e-studio-draft-playback-"
-    ):
-        raise SystemExit("E2E playback helper is restricted to development fixtures")
+    if not slug.startswith("e2e-studio-draft-playback-"):
+        raise SystemExit("E2E playback helper is restricted to browser-test fixtures")
     with SessionLocal() as db:
         progress = db.execute(
             select(WatchProgress, Profile, PlaybackSource)

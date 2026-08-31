@@ -5,16 +5,15 @@ import sys
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from e2e_guard import require_e2e_test_environment
 from sqlalchemy import select
 
-from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Entitlement, Plan, Subscription, SubscriptionStatus, User
 
 
 def main() -> None:
-    if get_settings().app_env not in {"development", "test"}:
-        raise SystemExit("E2E subscription helpers are disabled outside development/test")
+    require_e2e_test_environment()
     payload = json.load(sys.stdin)
     email = payload["email"].lower()
     if not email.endswith("@example.com"):

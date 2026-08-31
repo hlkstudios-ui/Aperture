@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useRef, useState } from "react";
 
 import type { Movie, NamedRecord } from "@/app/lib/catalog";
+import { apiGatewayPath } from "@/app/lib/api-gateway";
 
 type Dimension = { dimension: string; status: "matched" | "neutral" | "unavailable"; explanation: string };
 type Result = {
@@ -13,8 +14,6 @@ type Result = {
   constraints_satisfied: boolean;
   match_dimensions: Dimension[];
 };
-
-const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8000";
 
 export function PrescriptionLab({ genres }: { genres: NamedRecord[] }) {
   const [result, setResult] = useState<Result | null>(null);
@@ -45,7 +44,7 @@ export function PrescriptionLab({ genres }: { genres: NamedRecord[] }) {
       watch_state: value("watch_state") || "unwatched",
       exclude_movie_ids: excludedIds,
     };
-    const response = await fetch(`${apiOrigin}/recommendations/movie-prescription`, {
+    const response = await fetch(apiGatewayPath("/recommendations/movie-prescription"), {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },

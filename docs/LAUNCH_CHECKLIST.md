@@ -1,6 +1,6 @@
 # Production Launch Checklist
 
-Last audited: 2026-08-18  
+Last audited: 2026-08-30
 Decision: **NO-GO — unresolved critical blockers: 6 external**
 
 `PASS` means the repository and isolated staging evidence are complete. `BLOCKED` means production launch requires missing implementation, owner-supplied configuration, infrastructure, content, or legal approval. A passing staging build is not represented as a production launch.
@@ -40,7 +40,7 @@ A separate no-cost public demo target now exists at `deploy/staging/free-tier`. 
 - PASS LOCALLY — Trusted geo ingress strips spoofed assertions, signs Cloudflare-derived viewer country, preserves the request path, and fails closed on unknown country or missing configuration. Real Worker routing, Hostinger origin binding, DNS, and multi-country public acceptance remain external evidence.
 - PASS — Simultaneous-stream entitlements are enforced through atomic expiring per-device leases. Admission, refresh, stale recovery, invalid-entitlement fallback, inactive media denial, CDN-token lifetime coverage, and an actionable customer limit state are tested; provider Valkey/CDN drills remain external evidence.
 - PASS — Uploaded masters remain non-processable until a persisted malware verdict is clean. EICAR detection, scanner outage quarantine/retry, ClamAV protocol framing, and scanner preflight are automated without weakening checksum/container validation.
-- BLOCKED — No production host, DNS zone, publicly trusted certificate, production secrets, isolated production database/Redis/bucket, IAM/KMS policy, or CDN/origin configuration has been supplied and verified.
+- BLOCKED — The Hostinger VPS and Cloudflare zone now exist, but the public production stack and routes remain unopened. Public origin DNS/TLS, the isolated production database/Redis/storage runtime, IAM/encryption evidence, and CDN/origin acceptance have not been supplied and verified end to end.
 - PASS — The credential-free public-edge verifier passed six read-only checks against isolated staging HTTPS and is configured for the Hostinger Caddy single-host `/api` ingress contract.
 
 ## Data
@@ -60,9 +60,9 @@ A separate no-cost public demo target now exists at `deploy/staging/free-tier`. 
 - PASS — Correlated structured API/worker logs, protected Prometheus metrics, readiness, queue/storage/transcode/API/QoE measures, Studio Operations, alert rules, and seven incident runbooks exist.
 - PASS LOCALLY — The Hostinger target runs private Prometheus and Node Exporter with bounded retention and no host ports; authenticated API/host metrics plus host-audit, maintenance, backup, and media-replication freshness rules are wired. Secret-safe monitoring rendering and atomic success evidence are tested.
 - PASS LOCALLY — Private Blackbox Exporter probes the public web security-header contract, API readiness body, storage readiness, CDN TLS reachability, direct-origin 404 denial, and certificate lifetime. Structural coverage is tested; live DNS/TLS and two-region probes remain external.
-- PASS LOCALLY — The real Hostinger Caddyfile passes an executable runtime gate against staging upstreams: missing origin credentials fail with 404, trusted homepage/API traffic passes, public Studio/admin traffic fails with 404, and two-secret private requests reach the web/API applications.
-- PASS — Images, one-shot migrations, dependency health checks, staging verification, rollback guidance, and bad-deployment procedures are repeatable.
-- BLOCKED — A Hostinger New York VPS target is defined, but it has not been instantiated in the owner's account and a real immutable-image traffic rollback has not been rehearsed.
+- PASS LOCALLY — The first-party Caddy 2.11.4 image passes an executable runtime gate against staging upstreams: missing origin credentials fail with 404, trusted homepage/API traffic passes, public Studio/admin traffic fails with 404, and two-secret private requests reach the web/API applications. The same ordered edge blocks the five advisory-related MinIO request classes before proxying while preserving signed S3 operations. The hardened candidate also runs as the loopback-only private Studio gateway behind tailnet-only Tailscale Serve.
+- PASS — Images, one-shot migrations, dependency health checks, staging verification, and bad-deployment procedures are repeatable. The eight-artifact publisher now requires clean committed source, atomically reserves each release ID, proves all tags absent, emits provenance/SBOM attestations, commits a secret-free manifest before pinning, and rejects partial/reused releases. Stateful storage rollback requires compatibility/snapshot/clone evidence, and Caddy rollback or compensation synchronizes and verifies both public and private gateways.
+- BLOCKED — The existing Hostinger Boston 2 KVM 4 VPS has been reinstalled and hardened under the guarded `compact` profile. Its private Studio node is tagged, restricted by an owner-only TCP 443 tailnet grant, and configured with non-expiring node credentials, but owner-device Studio/MFA acceptance, the complete eight-artifact registry release, and a real immutable-image traffic rollback have not been completed.
 - BLOCKED — `ERROR_TRACKING_DSN` and external alert receivers/on-call routing are not configured; repository rules alone cannot notify an operator.
 
 ## Legal / Content
@@ -84,6 +84,7 @@ A separate no-cost public demo target now exists at `deploy/staging/free-tier`. 
 
 ## Latest Evidence
 
+- Current source validation — PASS: 287 API tests; 369 web tests across 52 files; web TypeScript and ESLint; 142 Hostinger tests plus 12 subtests; 11 private-Studio tests; 8 production-boundary tests; 8 DigitalOcean tests; 6 free-tier staging tests; 10 Cloudflare Worker tests; deployment Ruff, shell syntax, Compose rendering, and diff checks.
 - `deploy/staging/verify.sh` plus the current full deployed matrix — PASS, 46/46 enabled-feature Chromium desktop/mobile tests over HTTPS plus 4/4 in the separately rebuilt all-risky-features-off mode, including consent withdrawal/erasure, portable customer export/deletion, Studio Users/Subscriptions/Storage, SMTP reset, and exact subscription entitlements.
 - Cross-browser representative product/accessibility matrix — PASS, 24/24 after tablet and WebKit fixes.
 - Firefox generated adaptive player — PASS.

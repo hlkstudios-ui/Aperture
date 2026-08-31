@@ -69,6 +69,32 @@ def test_stripe_webhook_is_verified_and_idempotent(monkeypatch) -> None:
             db.commit()
 
 
+def test_disabled_billing_rejects_webhook_before_stripe_or_database(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.routes.billing_webhooks.get_settings",
+        lambda: SimpleNamespace(
+            billing_provider="disabled",
+            stripe_secret_key="sk_live_unused_must_not_be_called",
+            stripe_webhook_secret="whsec_unused_must_not_be_called",
+        ),
+    )
+    monkeypatch.setattr(
+        "app.routes.billing_webhooks.stripe.Webhook.construct_event",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("disabled billing must not parse Stripe webhooks")
+        ),
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/billing/stripe/webhook",
+            content=b"must-not-be-read-by-stripe",
+            headers={"stripe-signature": "unused"},
+        )
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Stripe billing is unavailable"}
+
+
 def test_invoice_webhooks_persist_success_and_failed_payment_state(monkeypatch) -> None:
     token = uuid.uuid4().hex
     email = f"billing-{token}@example.com"

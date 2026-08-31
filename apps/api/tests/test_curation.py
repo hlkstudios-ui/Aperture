@@ -21,7 +21,7 @@ def test_collections_lists_and_journey_progress_respect_rights_and_profiles() ->
         admin = Admin(email=admin_email, password_hash=hash_password(password))
         visible = Movie(
             title=f"Visible {suffix}",
-            slug=f"visible-{suffix}",
+            slug=f"licensed-title-{suffix}",
             short_description="Visible",
             synopsis="Visible in its licensed window.",
             runtime_minutes=90,
@@ -29,7 +29,7 @@ def test_collections_lists_and_journey_progress_respect_rights_and_profiles() ->
         )
         expired = Movie(
             title=f"Expired {suffix}",
-            slug=f"expired-{suffix}",
+            slug=f"unlicensed-title-{suffix}",
             short_description="Expired",
             synopsis="No longer licensed.",
             runtime_minutes=91,
@@ -75,7 +75,9 @@ def test_collections_lists_and_journey_progress_respect_rights_and_profiles() ->
     with TestClient(app) as public:
         curated = public.get(f"/curation/collections/movement-{suffix}")
         assert curated.status_code == 200
-        assert [item["slug"] for item in curated.json()["items"]] == [f"visible-{suffix}"]
+        assert [item["slug"] for item in curated.json()["items"]] == [
+            f"licensed-title-{suffix}"
+        ]
         public_journey = public.get(f"/curation/journeys/journey-{suffix}").json()
         assert public_journey["total_items"] == 1
         visible_item_id = public_journey["chapters"][0]["items"][0]["item_id"]

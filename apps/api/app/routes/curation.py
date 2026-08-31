@@ -42,7 +42,8 @@ def collections(db: DbSession, country: OptionalViewerCountry):
         )
         .order_by(Collection.updated_at.desc())
     ).all()
-    return [collection_response(db, load_collection(db, x.id), country) for x in records]
+    responses = [collection_response(db, load_collection(db, x.id), country) for x in records]
+    return [response for response in responses if response.items]
 
 
 @router.get("/collections/{slug}", response_model=CollectionResponse)
@@ -56,12 +57,15 @@ def collection(slug: str, db: DbSession, country: OptionalViewerCountry):
     )
     if not record:
         raise HTTPException(404, "Collection was not found")
-    return collection_response(db, load_collection(db, record.id), country)
+    response = collection_response(db, load_collection(db, record.id), country)
+    if not response.items:
+        raise HTTPException(404, "Collection was not found")
+    return response
 
 
 @router.get("/journeys", response_model=list[JourneyResponse])
 def journeys(db: DbSession, country: OptionalViewerCountry):
-    return [
+    responses = [
         journey_response(db, load_journey(db, journey_id=x.id), country=country)
         for x in db.scalars(
             select(Journey)
@@ -69,6 +73,7 @@ def journeys(db: DbSession, country: OptionalViewerCountry):
             .order_by(Journey.updated_at.desc())
         )
     ]
+    return [response for response in responses if response.total_items]
 
 
 @router.get("/journeys/{slug}", response_model=JourneyResponse)
@@ -76,7 +81,10 @@ def journey(slug: str, db: DbSession, country: OptionalViewerCountry):
     record = load_journey(db, slug=slug)
     if record.status is not CurationStatus.published:
         raise HTTPException(404, "Journey was not found")
-    return journey_response(db, record, country=country)
+    response = journey_response(db, record, country=country)
+    if not response.total_items:
+        raise HTTPException(404, "Journey was not found")
+    return response
 
 
 @router.get("/my-lists", response_model=list[CollectionResponse])
@@ -154,7 +162,10 @@ def journey_progress(
     record = load_journey(db, slug=slug)
     if record.status is not CurationStatus.published:
         raise HTTPException(404, "Journey was not found")
-    return journey_response(db, record, profile.id, country)
+    response = journey_response(db, record, profile.id, country)
+    if not response.total_items:
+        raise HTTPException(404, "Journey was not found")
+    return response
 
 
 @router.put("/journeys/{slug}/progress", response_model=JourneyResponse)
@@ -167,8 +178,14 @@ def set_journey_progress(
 ):
     profile = active_profile(db, session)
     record = load_journey(db, slug=slug)
-    item_ids = {x.id for chapter in record.chapters for x in chapter.items}
-    if record.status is not CurationStatus.published or payload.journey_item_id not in item_ids:
+    response = journey_response(db, record, profile.id, country)
+    visible_item_ids = {
+        item.item_id for chapter in response.chapters for item in chapter.items
+    }
+    if (
+        record.status is not CurationStatus.published
+        or payload.journey_item_id not in visible_item_ids
+    ):
         raise HTTPException(404, "Journey item was not found")
     db.execute(
         delete(JourneyProgress).where(

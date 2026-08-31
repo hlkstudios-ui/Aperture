@@ -15,13 +15,14 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -250,6 +251,149 @@ class AuditLog(Base):
     )
 
 
+class SiteBrandAsset(Base):
+    __tablename__ = "site_brand_assets"
+    __table_args__ = (
+        CheckConstraint("byte_size > 0 AND byte_size <= 2097152", name="ck_site_brand_asset_size"),
+        CheckConstraint(
+            "width >= 64 AND width <= 4096 AND height >= 64 AND height <= 4096",
+            name="ck_site_brand_asset_dimensions",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    content_type: Mapped[str] = mapped_column(String(32))
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+    sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    byte_size: Mapped[int] = mapped_column(Integer)
+    width: Mapped[int] = mapped_column(Integer)
+    height: Mapped[int] = mapped_column(Integer)
+    revision: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SiteBrandConfiguration(Base):
+    __tablename__ = "site_brand_configurations"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_site_brand_configuration_singleton"),
+        CheckConstraint("revision >= 0", name="ck_site_brand_configuration_revision"),
+        CheckConstraint(
+            "published_revision IS NULL OR published_revision >= 0",
+            name="ck_site_brand_configuration_published_revision",
+        ),
+        CheckConstraint(
+            "current_step >= 1 AND current_step <= 5", name="ck_site_brand_current_step"
+        ),
+        CheckConstraint(
+            "domains_revision >= 0", name="ck_site_brand_configuration_domains_revision"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    owner_admin_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("admins.id", ondelete="RESTRICT"), unique=True, index=True
+    )
+    draft_config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, server_default="{}")
+    published_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    published_revision: Mapped[int | None] = mapped_column(Integer)
+    current_step: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    completed_steps: Mapped[list[int]] = mapped_column(JSON, default=list, server_default="[]")
+    domains_revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    draft_logo_asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("site_brand_assets.id", ondelete="SET NULL")
+    )
+    published_logo_asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("site_brand_assets.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    owner_admin: Mapped[Admin] = relationship(foreign_keys=[owner_admin_id])
+    draft_logo_asset: Mapped[SiteBrandAsset | None] = relationship(
+        foreign_keys=[draft_logo_asset_id]
+    )
+    published_logo_asset: Mapped[SiteBrandAsset | None] = relationship(
+        foreign_keys=[published_logo_asset_id]
+    )
+    domains: Mapped[list["SiteDomain"]] = relationship(
+        back_populates="site_brand_configuration", cascade="all, delete-orphan"
+    )
+
+
+class SiteDomainStatus(StrEnum):
+    provisioning = "provisioning"
+    pending_dns = "pending_dns"
+    pending_tls = "pending_tls"
+    pending_edge = "pending_edge"
+    active = "active"
+    failed = "failed"
+    removing = "removing"
+
+
+class SiteDomain(Base):
+    __tablename__ = "site_domains"
+    __table_args__ = (
+        CheckConstraint("site_brand_configuration_id = 1", name="ck_site_domains_single_site"),
+        CheckConstraint("hostname = lower(hostname)", name="ck_site_domains_lowercase_hostname"),
+        CheckConstraint("right(hostname, 1) <> '.'", name="ck_site_domains_no_trailing_dot"),
+        CheckConstraint("revision >= 0", name="ck_site_domains_revision"),
+        CheckConstraint(
+            "edge_published_revision IS NULL OR edge_published_revision >= 0",
+            name="ck_site_domains_edge_published_revision",
+        ),
+        CheckConstraint(
+            "status IN ('provisioning', 'pending_dns', 'pending_tls', 'pending_edge', "
+            "'active', 'failed', 'removing')",
+            name="ck_site_domains_status",
+        ),
+        CheckConstraint(
+            "NOT is_primary OR status = 'active'", name="ck_site_domains_primary_active"
+        ),
+        Index(
+            "uq_site_domains_primary",
+            "site_brand_configuration_id",
+            unique=True,
+            postgresql_where=text("is_primary"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    site_brand_configuration_id: Mapped[int] = mapped_column(
+        ForeignKey("site_brand_configurations.id", ondelete="CASCADE"),
+        default=1,
+        server_default="1",
+        index=True,
+    )
+    hostname: Mapped[str] = mapped_column(String(253), unique=True, index=True)
+    status: Mapped[str] = mapped_column(
+        String(32), default=SiteDomainStatus.provisioning, server_default="provisioning", index=True
+    )
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    provider: Mapped[str] = mapped_column(String(32))
+    provider_hostname_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    dns_records: Mapped[list[dict[str, str]]] = mapped_column(
+        JSON, default=list, server_default="[]"
+    )
+    failure_reason: Mapped[str | None] = mapped_column(String(64))
+    revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    edge_published_revision: Mapped[int | None] = mapped_column(Integer)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    site_brand_configuration: Mapped[SiteBrandConfiguration] = relationship(
+        back_populates="domains"
+    )
+
+
 class AssetState(StrEnum):
     uploading = "uploading"
     completed = "completed"
@@ -386,6 +530,16 @@ class PlaybackSource(Base):
             "credits_start_seconds IS NULL OR credits_start_seconds >= 0",
             name="ck_playback_sources_credits_start",
         ),
+        CheckConstraint(
+            "(processing_job_id IS NOT NULL)::integer + "
+            "(external_manifest_url IS NOT NULL)::integer = 1",
+            name="ck_playback_sources_exactly_one_origin",
+        ),
+        CheckConstraint(
+            "external_manifest_url IS NULL OR "
+            "(rights_basis IS NOT NULL AND rights_reference IS NOT NULL)",
+            name="ck_playback_sources_external_rights_evidence",
+        ),
         Index(
             "uq_playback_sources_legacy_movie",
             "movie_id",
@@ -401,8 +555,21 @@ class PlaybackSource(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    processing_job_id: Mapped[uuid.UUID] = mapped_column(
+    processing_job_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("processing_jobs.id", ondelete="CASCADE"), unique=True
+    )
+    external_manifest_url: Mapped[str | None] = mapped_column(String(2000))
+    external_format: Mapped[str | None] = mapped_column(String(16))
+    duration_seconds: Mapped[float | None] = mapped_column(Float)
+    rights_basis: Mapped[str | None] = mapped_column(String(500))
+    rights_reference: Mapped[str | None] = mapped_column(String(500))
+    rights_start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    rights_end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    allowed_territories: Mapped[list[str]] = mapped_column(
+        JSONB, default=list, server_default="[]"
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", index=True
     )
     movie_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("movies.id", ondelete="CASCADE"))
     episode_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -420,7 +587,7 @@ class PlaybackSource(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
-    processing_job: Mapped[ProcessingJob] = relationship()
+    processing_job: Mapped[ProcessingJob | None] = relationship()
 
 
 class WatchProgress(Base):
@@ -899,4 +1066,5 @@ from app import catalog_models as catalog_models  # noqa: E402, F401
 from app import club_models as club_models  # noqa: E402, F401
 from app import community_models as community_models  # noqa: E402, F401
 from app import curation_models as curation_models  # noqa: E402, F401
+from app import explore_models as explore_models  # noqa: E402, F401
 from app import scene_models as scene_models  # noqa: E402, F401

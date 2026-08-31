@@ -13,6 +13,7 @@ annotated-types==0.8.0
 anyio==4.14.2
     # via
     #   httpx
+    #   httpx2
     #   starlette
     #   watchfiles
 argon2-cffi==25.1.0
@@ -21,12 +22,20 @@ argon2-cffi-bindings==25.1.0
     # via argon2-cffi
 authlib==1.6.12
     # via apex-cinema-api (apps/api/pyproject.toml)
+boolean-py==5.0
+    # via license-expression
 boto3==1.42.54
     # via apex-cinema-api (apps/api/pyproject.toml)
 botocore==1.42.97
     # via
     #   boto3
     #   s3transfer
+build==1.6.0
+    # via pip-tools
+cachecontrol==0.14.4
+    # via
+    #   cachecontrol
+    #   pip-audit
 certifi==2026.7.22
     # via
     #   httpcore
@@ -40,11 +49,23 @@ cffi==2.1.1
 charset-normalizer==3.5.1
     # via requests
 click==8.4.2
-    # via uvicorn
+    # via
+    #   pip-tools
+    #   uvicorn
+colorama==0.4.6
+    # via
+    #   build
+    #   click
+    #   pytest
+    #   uvicorn
 cryptography==50.0.0
     # via
     #   apex-cinema-api (apps/api/pyproject.toml)
     #   authlib
+cyclonedx-python-lib==11.12.0
+    # via pip-audit
+defusedxml==0.7.1
+    # via py-serializable
 dnspython==2.8.0
     # via email-validator
 email-validator==2.3.0
@@ -53,21 +74,31 @@ fastapi==0.141.1
     # via
     #   apex-cinema-api (apps/api/pyproject.toml)
     #   sentry-sdk
+filelock==3.32.4
+    # via cachecontrol
+greenlet==3.5.5
+    # via sqlalchemy
 h11==0.16.0
     # via
     #   httpcore
+    #   httpcore2
     #   uvicorn
 httpcore==1.0.9
     # via httpx
+httpcore2==2.12.0
+    # via httpx2
 httptools==0.8.0
     # via uvicorn
 httpx==0.28.1
+    # via apex-cinema-api (apps/api/pyproject.toml)
+httpx2==2.12.0
     # via apex-cinema-api (apps/api/pyproject.toml)
 idna==3.19
     # via
     #   anyio
     #   email-validator
     #   httpx
+    #   httpx2
     #   requests
 iniconfig==2.3.0
     # via pytest
@@ -75,18 +106,47 @@ jmespath==1.1.0
     # via
     #   boto3
     #   botocore
+license-expression==30.4.4
+    # via cyclonedx-python-lib
 mako==1.4.1
     # via alembic
+markdown-it-py==4.2.0
+    # via rich
 markupsafe==3.0.3
     # via mako
+mdurl==0.1.2
+    # via markdown-it-py
+msgpack==1.2.2
+    # via cachecontrol
+packageurl-python==0.17.6
+    # via cyclonedx-python-lib
 packaging==26.3
-    # via pytest
+    # via
+    #   build
+    #   pip-audit
+    #   pip-requirements-parser
+    #   pytest
+    #   wheel
+pillow==12.3.0
+    # via apex-cinema-api (apps/api/pyproject.toml)
+pip-api==0.0.34
+    # via pip-audit
+pip-audit==2.10.1
+    # via apex-cinema-api (apps/api/pyproject.toml)
+pip-requirements-parser==32.0.1
+    # via pip-audit
+pip-tools==7.6.1
+    # via apex-cinema-api (apps/api/pyproject.toml)
+platformdirs==4.11.5
+    # via pip-audit
 pluggy==1.6.0
     # via pytest
 psycopg==3.3.3
     # via apex-cinema-api (apps/api/pyproject.toml)
 psycopg-binary==3.3.3
     # via psycopg
+py-serializable==2.1.0
+    # via cyclonedx-python-lib
 pycparser==3.0
     # via cffi
 pydantic==2.13.4
@@ -98,9 +158,17 @@ pydantic-core==2.46.4
 pydantic-settings==2.14.2
     # via apex-cinema-api (apps/api/pyproject.toml)
 pygments==2.21.0
-    # via pytest
+    # via
+    #   pytest
+    #   rich
 pyotp==2.10.0
     # via apex-cinema-api (apps/api/pyproject.toml)
+pyparsing==3.3.2
+    # via pip-requirements-parser
+pyproject-hooks==1.2.0
+    # via
+    #   build
+    #   pip-tools
 pytest==9.0.3
     # via apex-cinema-api (apps/api/pyproject.toml)
 python-dateutil==2.9.0.post0
@@ -116,7 +184,12 @@ pyyaml==6.0.3
 redis==7.3.0
     # via apex-cinema-api (apps/api/pyproject.toml)
 requests==2.34.2
-    # via stripe
+    # via
+    #   cachecontrol
+    #   pip-audit
+    #   stripe
+rich==15.0.0
+    # via pip-audit
 ruff==0.15.5
     # via apex-cinema-api (apps/api/pyproject.toml)
 s3transfer==0.16.1
@@ -125,6 +198,8 @@ sentry-sdk==2.68.0
     # via apex-cinema-api (apps/api/pyproject.toml)
 six==1.17.0
     # via python-dateutil
+sortedcontainers==2.4.0
+    # via cyclonedx-python-lib
 sqlalchemy==2.0.52
     # via
     #   alembic
@@ -133,11 +208,21 @@ starlette==1.6.0
     # via fastapi
 stripe==13.2.0
     # via apex-cinema-api (apps/api/pyproject.toml)
+tomli==2.4.1
+    # via pip-audit
+tomli-w==1.2.0
+    # via pip-audit
+truststore==0.10.4
+    # via
+    #   httpcore2
+    #   httpx2
 typing-extensions==4.16.0
     # via
     #   alembic
     #   anyio
+    #   cyclonedx-python-lib
     #   fastapi
+    #   httpx2
     #   psycopg
     #   pydantic
     #   pydantic-core
@@ -150,6 +235,8 @@ typing-inspection==0.4.4
     #   fastapi
     #   pydantic
     #   pydantic-settings
+tzdata==2026.3
+    # via psycopg
 urllib3==2.7.0
     # via
     #   botocore
@@ -157,9 +244,13 @@ urllib3==2.7.0
     #   sentry-sdk
 uvicorn==0.41.0
     # via apex-cinema-api (apps/api/pyproject.toml)
-uvloop==0.22.1
-    # via uvicorn
 watchfiles==1.2.0
     # via uvicorn
 websockets==17.0.1
     # via uvicorn
+wheel==0.48.0
+    # via pip-tools
+
+# The following packages are considered to be unsafe in a requirements file:
+# pip
+# setuptools

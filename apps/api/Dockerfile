@@ -1,11 +1,10 @@
-FROM python:3.12.11-slim-bookworm AS runtime
+FROM python:3.12.14-alpine3.24 AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1
-RUN apt-get update \
-    && apt-get install --no-install-recommends -y ffmpeg ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system aperture \
-    && useradd --system --gid aperture --home-dir /app aperture
+RUN apk upgrade --no-cache \
+    && apk add --no-cache ca-certificates \
+    && addgroup --system aperture \
+    && adduser --system --ingroup aperture --home /app aperture
 WORKDIR /app
 COPY apps/api/pyproject.toml apps/api/requirements.lock ./
 COPY apps/api/app ./app

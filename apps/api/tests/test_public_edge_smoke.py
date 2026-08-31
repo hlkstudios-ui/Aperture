@@ -31,6 +31,13 @@ def test_production_edge_checks_routing_readiness_denial_and_hidden_docs(monkeyp
         seen.append(url)
         if url == "https://watch.example.com/":
             return response(200, "text/html", b"<html></html>")
+        if url == "https://watch.example.com/api/gateway/auth/oauth/providers":
+            value = response(200)
+            return smoke.Response(
+                value.status,
+                {**value.headers, "cache-control": "private, no-store", "vary": "Cookie"},
+                value.body,
+            )
         if url == "https://watch.example.com/api/ready":
             value = response(200, body=json.dumps({"status": "ready"}).encode())
             return smoke.Response(
@@ -43,11 +50,10 @@ def test_production_edge_checks_routing_readiness_denial_and_hidden_docs(monkeyp
     monkeypatch.setattr(smoke, "fetch", fake_fetch)
     result = smoke.verify(
         "https://watch.example.com/",
-        "https://watch.example.com/api/",
         production=True,
         context=object(),
     )
-    assert result == {"event": "public_edge.verified", "status": "pass", "checks": 11}
+    assert result == {"event": "public_edge.verified", "status": "pass", "checks": 20}
     assert "https://watch.example.com/api/admin/support/users" in seen
     assert "https://watch.example.com/api/openapi.json" in seen
     assert "https://watch.example.com/studio" in seen
@@ -69,9 +75,13 @@ def test_production_requires_hsts() -> None:
         raise AssertionError("production response passed without HSTS")
 
 
-def test_origins_require_https_and_web_origin_rejects_paths() -> None:
-    assert smoke.origin("api", "https://watch.example.com/api", allow_path=True).endswith("/api/")
-    for value in ("http://watch.example.com", "https://watch.example.com/customer"):
+def test_origin_requires_https_and_rejects_paths() -> None:
+    assert smoke.origin("web", "https://watch.example.com").endswith("/")
+    for value in (
+        "http://watch.example.com",
+        "https://watch.example.com/api",
+        "https://watch.example.com/customer",
+    ):
         try:
             smoke.origin("web", value)
         except ValueError:

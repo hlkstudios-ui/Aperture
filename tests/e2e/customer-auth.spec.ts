@@ -34,12 +34,13 @@ test("customer registers, creates a second profile, and switches profiles", asyn
   await expect(page).toHaveURL(/\/profiles$/);
   await expect(page.getByRole("heading", { name: "Who's watching?" })).toBeVisible();
 
-  await page.getByLabel("Add another profile").fill("Cinephile Guest");
+  await page.getByLabel("Profile name").fill("Cinephile Guest");
   await page.getByRole("button", { name: "Add profile" }).click();
   const secondProfile = page.getByRole("button", { name: /Cinephile Guest/ });
   await expect(secondProfile).toBeVisible();
   await secondProfile.click();
   await expect(secondProfile).toHaveClass(/active/);
+  await expect(secondProfile).toHaveAttribute("aria-pressed", "true");
   await page.screenshot({ path: testInfo.outputPath("profile-selection.png"), fullPage: true });
 
   expect(consoleErrors).toEqual([]);

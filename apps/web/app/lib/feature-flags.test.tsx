@@ -1,5 +1,10 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/",
+  useRouter: () => ({ push: vi.fn() }),
+}));
 
 afterEach(() => {
   cleanup();
@@ -24,6 +29,7 @@ describe("customer feature flags", () => {
     expect(screen.queryByRole("link", { name: "Clubs" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Discover" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Prescription" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
     expect(screen.getAllByRole("link", { name: "Movies" })).toHaveLength(2);
   });
 

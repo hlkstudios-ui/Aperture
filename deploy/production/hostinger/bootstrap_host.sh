@@ -45,13 +45,26 @@ if ipaddress.ip_address(sys.argv[1]) not in ipaddress.ip_network(sys.argv[2], st
 PY
 
 export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install --no-install-recommends -y unattended-upgrades fail2ban ufw jq ca-certificates
-
 temporary=$(mktemp -d /tmp/aperture-host-hardening.XXXXXX)
 trap 'rm -rf "$temporary"' EXIT
 
-cat >"$temporary/60-aperture-hardening.conf" <<'EOF'
+# Pre-seed the jail override before package installation so a package-triggered service start
+# cannot ban the currently approved operator before the managed policy exists. This applies
+# only to sshd; every other source and jail retains normal Fail2ban protection.
+cat >"$temporary/zz-aperture-sshd.local" <<EOF
+[sshd]
+enabled = true
+ignoreip = 127.0.0.1/8 ::1 $SSH_ALLOWED_CIDR
+EOF
+install -d -o root -g root -m 0755 /etc/fail2ban/jail.d
+install -o root -g root -m 0644 "$temporary/zz-aperture-sshd.local" /etc/fail2ban/jail.d/zz-aperture-sshd.local
+rm -f -- /etc/fail2ban/jail.d/99-aperture-sshd.local
+
+apt-get update
+apt-get install --no-install-recommends -y unattended-upgrades fail2ban ufw jq ca-certificates
+fail2ban-client -t
+
+cat >"$temporary/00-aperture-hardening.conf" <<'EOF'
 PermitRootLogin no
 PasswordAuthentication no
 KbdInteractiveAuthentication no
@@ -62,8 +75,23 @@ AllowTcpForwarding no
 MaxAuthTries 3
 LoginGraceTime 30
 EOF
-install -o root -g root -m 0644 "$temporary/60-aperture-hardening.conf" /etc/ssh/sshd_config.d/60-aperture-hardening.conf
+install -o root -g root -m 0644 "$temporary/00-aperture-hardening.conf" /etc/ssh/sshd_config.d/00-aperture-hardening.conf
+# OpenSSH uses the first obtained value. Remove Aperture's obsolete later-sorting drop-in only
+# after the replacement exists so cloud-init/vendor files cannot retain weaker settings.
+rm -f -- /etc/ssh/sshd_config.d/60-aperture-hardening.conf
 /usr/sbin/sshd -t
+effective_sshd=$(/usr/sbin/sshd -T)
+for required_setting in \
+  "permitrootlogin no" \
+  "passwordauthentication no" \
+  "kbdinteractiveauthentication no" \
+  "pubkeyauthentication yes"
+do
+  if ! printf '%s\n' "$effective_sshd" | grep -Fqx "$required_setting"; then
+    echo "effective sshd policy did not apply: $required_setting" >&2
+    exit 1
+  fi
+done
 
 daemon=/etc/docker/daemon.json
 if [ -f "$daemon" ]; then
@@ -83,7 +111,15 @@ ufw allow 443/tcp
 ufw allow 443/udp
 ufw --force enable
 
-systemctl enable --now unattended-upgrades fail2ban docker
+systemctl enable --now unattended-upgrades docker
+systemctl enable fail2ban
+# Restart only after the managed jail file is installed, syntax-checked, and UFW has its final
+# rules. Clear a pre-existing sshd ban for this already CIDR-validated live operator session.
+systemctl restart fail2ban
+fail2ban-client set sshd unbanip "$REMOTE_IP" >/dev/null 2>&1 || true
+FAIL2BAN_IGNOREIP=$(fail2ban-client get sshd ignoreip)
+printf '%s\n' "$FAIL2BAN_IGNOREIP" | \
+  python3 "$BASE_DIR/validate_fail2ban_ignore.py" --allowed "$SSH_ALLOWED_CIDR"
 systemctl reload ssh
 systemctl reload docker || systemctl restart docker
 

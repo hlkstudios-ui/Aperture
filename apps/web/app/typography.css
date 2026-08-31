@@ -1,0 +1,954 @@
+/*
+ * APERTURE SEMANTIC TYPOGRAPHY
+ *
+ * Voice determines type, not the route that happens to render it:
+ *   display/editorial  — titles, chapters, cinematic statements
+ *   reading            — descriptions, synopsis, policy and help copy
+ *   interface          — navigation, controls, labels and actions
+ *   metadata           — genres, content kind, status and compact facts
+ *   data               — years, ratings, runtimes, dates, counts and IDs
+ */
+
+:root {
+  --font-display: var(--font-aperture-editorial), "Iowan Old Style", Baskerville, Georgia, serif;
+  --font-editorial: var(--font-aperture-editorial), "Iowan Old Style", Baskerville, Georgia, serif;
+  --font-body: var(--font-aperture-reading), system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --font-ui: var(--font-aperture-reading), system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --font-metadata: var(--font-aperture-reading), system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --font-data: var(--font-aperture-data), "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  /* Compatibility aliases used by the interactive experiences and legacy modules. */
+  --font-sans: var(--font-ui);
+  --font-serif: var(--font-display);
+  --font-mono: var(--font-data);
+
+  /* Responsive roles keep hierarchy strong without sacrificing readability. */
+  --type-display-xl: clamp(3.25rem, 8vw, 7.75rem);
+  --type-display-lg: clamp(2.85rem, 6.5vw, 6.5rem);
+  --type-display-md: clamp(2.1rem, 4.25vw, 4.25rem);
+  --type-heading-lg: clamp(1.75rem, 3vw, 3rem);
+  --type-heading-md: clamp(1.35rem, 2vw, 2rem);
+  --type-body-lg: clamp(1.0625rem, 1.2vw, 1.1875rem);
+  --type-body: 1rem;
+  --type-ui: 0.9375rem;
+  --type-meta: 0.875rem;
+}
+
+html,
+body {
+  font-family: var(--font-body);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea,
+summary {
+  font-family: var(--font-ui);
+}
+
+/* Reusable roles for new components. Existing shared components map below. */
+.type-display,
+.type-editorial {
+  font-family: var(--font-editorial);
+  font-optical-sizing: auto;
+  text-wrap: balance;
+}
+
+.type-display {
+  font-size: var(--type-display-lg);
+  font-weight: 470;
+  line-height: 0.94;
+  letter-spacing: -0.045em;
+}
+
+.type-editorial {
+  font-size: var(--type-heading-md);
+  font-weight: 520;
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+}
+
+.type-reading {
+  font-family: var(--font-body);
+  font-size: var(--type-body);
+  font-weight: 450;
+  line-height: 1.68;
+}
+
+.type-ui,
+.type-kicker,
+.type-metadata {
+  font-family: var(--font-ui);
+  font-size: var(--type-ui);
+}
+
+.type-ui {
+  font-weight: 700;
+}
+
+.type-kicker,
+.type-metadata {
+  font-size: var(--type-meta);
+  font-weight: 760;
+  letter-spacing: 0.105em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.type-data,
+time,
+[data-type-role="data"] {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.eyebrow {
+  animation: none;
+  filter: none;
+  opacity: 1;
+}
+
+/* Tracking and forced capitals are a Latin convention, not a universal one. */
+html[dir="rtl"] :is(.eyebrow, .type-kicker, .browse-experience__eyebrow, .catalog-card__identity),
+html:is(:lang(ar), :lang(fa), :lang(he), :lang(ur), :lang(zh), :lang(ja), :lang(ko), :lang(th))
+  :is(.eyebrow, .type-kicker, .browse-experience__eyebrow, .catalog-card__identity) {
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+/* Display and editorial voices. Legacy pages still contain `font` shorthands,
+   so the heading family is asserted globally while each surface keeps its own
+   scale, weight and spacing. */
+body :is(h1, h2, h3, h4) {
+  font-family: var(--font-editorial) !important;
+  font-optical-sizing: auto;
+  text-wrap: balance;
+}
+
+:is(
+  .customer-shell,
+  .catalog-page,
+  .detail-page,
+  .browse-experience,
+  .external-title-shell,
+  .profiles-shell,
+  .viewer-auth-shell,
+  .account-page,
+  .credit-destination,
+  .policy-page,
+  .catalog-state,
+  .route-error
+) :where(h1, h2, h3, h4),
+.site-footer > strong {
+  font-family: var(--font-editorial);
+  font-optical-sizing: auto;
+  text-wrap: balance;
+}
+
+:where(
+  .customer-shell,
+  .catalog-page,
+  .detail-page,
+  .browse-experience,
+  .external-title-shell,
+  .profiles-shell,
+  .viewer-auth-shell,
+  .account-page,
+  .credit-destination,
+  .policy-page,
+  .catalog-state,
+  .route-error
+) h1 {
+  font-weight: 470;
+}
+
+:where(
+  .customer-shell,
+  .catalog-page,
+  .detail-page,
+  .browse-experience,
+  .external-title-shell,
+  .profiles-shell,
+  .viewer-auth-shell,
+  .account-page,
+  .credit-destination,
+  .policy-page,
+  .catalog-state,
+  .route-error
+) :where(h2, h3, h4) {
+  font-weight: 520;
+}
+
+.hero h1,
+.hero-slide-copy h1,
+.library-heading h1,
+.search-heading h1,
+.detail-copy h1,
+.external-title-copy h1,
+.profiles-shell h1,
+.viewer-auth-card h1,
+.browse-experience__hero-copy h1 {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+}
+
+.section-heading h2,
+.catalog-intro h1,
+.universal-search-results > header h2,
+.search-results h2,
+.search-entity-strip strong,
+.universal-title-copy > strong,
+.catalog-card__title,
+.catalog-synopsis-popover > strong {
+  font-family: var(--font-editorial);
+  font-optical-sizing: auto;
+}
+
+/* Long-form copy remains calm, highly legible, and never uses the display face. */
+:where(
+  .customer-shell,
+  .catalog-page,
+  .detail-page,
+  .browse-experience,
+  .external-title-shell,
+  .profiles-shell,
+  .viewer-auth-shell,
+  .account-page,
+  .credit-destination,
+  .policy-page,
+  .catalog-state,
+  .route-error
+) :where(p, li, dd),
+.site-footer {
+  font-family: var(--font-body);
+}
+
+.hero-slide-copy > p:not(.hero-original-title),
+.catalog-intro > p:last-child,
+.library-heading > p:last-child,
+.universal-search-heading > p:not(.eyebrow),
+.detail-lede,
+.detail-body p,
+.external-title-copy > p:not(.eyebrow),
+.credit-destination > header > p,
+.policy-page article p,
+.browse-specialist-rail__heading > div > p:last-child,
+.browse-experience__collection-intro > div > p:last-child,
+.catalog-synopsis-popover p,
+.universal-title-copy > p,
+.curation-card p,
+.auth-intro {
+  font-family: var(--font-body);
+  font-size: var(--type-body);
+  font-weight: 450;
+  line-height: 1.65;
+}
+
+.hero-slide-copy > p:not(.hero-original-title),
+.detail-lede,
+.browse-specialist-rail__heading > div > p:last-child,
+.browse-experience__collection-intro > div > p:last-child {
+  font-size: var(--type-body-lg);
+}
+
+.hero-original-title,
+.movie-original-title,
+blockquote,
+q {
+  font-family: var(--font-editorial);
+  font-optical-sizing: auto;
+  font-style: italic;
+}
+
+/* Interface voice: consistent weight and spacing wherever the text asks for action. */
+.cinematic-nav,
+.site-footer nav,
+:where(.primary, .secondary, .action-link),
+:where(
+  .customer-shell,
+  .catalog-page,
+  .detail-page,
+  .browse-experience,
+  .external-title-shell,
+  .profiles-shell,
+  .viewer-auth-shell,
+  .account-page
+) :where(button, label, input, select, textarea, summary) {
+  font-family: var(--font-ui);
+}
+
+:where(
+  .customer-shell,
+  .catalog-page,
+  .detail-page,
+  .browse-experience,
+  .external-title-shell,
+  .profiles-shell,
+  .viewer-auth-shell,
+  .account-page
+) :where(input, select, textarea) {
+  font-size: var(--type-body);
+  line-height: 1.45;
+}
+
+.cinematic-nav :where(a, button),
+.site-footer a,
+:where(.primary, .secondary, .action-link) {
+  font-size: var(--type-ui);
+  font-weight: 700;
+}
+
+/* The header has its own high-specificity responsive rules, so map every
+   visible navigation voice explicitly instead of allowing it to shrink. */
+.cinematic-wordmark strong,
+.cinematic-primary-nav > :is(a, button),
+.cinematic-nav-actions > :is(a, button),
+.cinematic-mobile-actions > :is(a, button),
+.cinematic-mobile-dock > a {
+  font-family: var(--font-ui);
+  font-size: var(--type-meta);
+}
+
+.cinematic-mega-intro h2,
+.cinematic-utility-menu h2,
+.cinematic-mobile-panel h2,
+.cinematic-mega-feature > strong {
+  font-family: var(--font-editorial);
+  font-optical-sizing: auto;
+}
+
+.cinematic-mega-intro p,
+.cinematic-utility-menu > div > p,
+.cinematic-mobile-panel-heading p {
+  font-family: var(--font-body);
+  font-size: var(--type-body);
+  line-height: 1.6;
+}
+
+.cinematic-mega-links h3,
+.cinematic-mobile-menu-groups h3,
+.cinematic-mega-feature > span,
+.cinematic-mega-links nav > a > small,
+.cinematic-utility-menu nav > a > small,
+.cinematic-mega-feature > small,
+.cinematic-mega-game small,
+.cinematic-mobile-primary > a > small {
+  font-family: var(--font-metadata);
+  font-size: var(--type-meta);
+  line-height: 1.4;
+}
+
+.cinematic-mega-links nav > a > span,
+.cinematic-utility-menu nav > a > span,
+.cinematic-utility-menu .cinematic-sign-in,
+.cinematic-mobile-search-field,
+.cinematic-mobile-primary > a,
+.cinematic-mobile-menu-groups nav > a,
+.cinematic-mobile-account > a {
+  font-family: var(--font-ui);
+  font-size: var(--type-ui);
+}
+
+/* Kicker/metadata voice. These are compact, but the 13px floor remains readable. */
+:where(
+  .customer-shell,
+  .catalog-page,
+  .detail-page,
+  .browse-experience,
+  .external-title-shell,
+  .profiles-shell,
+  .viewer-auth-shell,
+  .account-page,
+  .credit-destination,
+  .policy-page,
+  .catalog-state,
+  .route-error
+) :is(small, time),
+.eyebrow,
+.browse-experience__eyebrow,
+.catalog-card__identity,
+.catalog-card__identity small,
+.catalog-card__details small,
+.detail-meta,
+.external-title-facts span,
+.universal-title-meta b,
+.universal-series-facts,
+.search-availability,
+.search-entity-strip small,
+.universal-search-results > header > span,
+.library-count,
+.auth-privacy,
+.auth-divider,
+.social-provider small,
+.captcha-local small {
+  font-family: var(--font-metadata);
+  font-size: var(--type-meta);
+  line-height: 1.4;
+}
+
+.eyebrow,
+.browse-experience__eyebrow,
+.catalog-card__identity,
+.search-entity-strip small {
+  font-weight: 760;
+  letter-spacing: 0.105em;
+  text-transform: uppercase;
+}
+
+/* Ratings, runtimes, dates, positions, counters and pagination read as data. */
+.hero-meta,
+.hero-slide-count,
+.detail-meta,
+.external-title-facts,
+.catalog-card__identity small,
+.card-facts,
+.marathon-order,
+.universal-title-meta,
+.universal-series-facts,
+.universal-search-pagination strong,
+.library-count,
+.browse-specialist-rail__controls > span,
+.browse-experience__result-count,
+.browse-experience__collection-index,
+.activity-list time {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums slashed-zero;
+  letter-spacing: 0.025em;
+}
+
+.hero-slide-count,
+.browse-specialist-rail__controls > span,
+.browse-experience__result-count,
+.browse-experience__collection-index {
+  font-size: var(--type-meta);
+  line-height: 1.4;
+}
+
+/* Search and filter language is operational, not decorative: countries,
+   types, results and clear/reset actions must remain readable when opened. */
+.catalog-browser :is(
+  legend,
+  label,
+  small,
+  button,
+  summary,
+  .catalog-browser-heading > span,
+  .catalog-filter-results > header > span,
+  .filter-title-meta span,
+  .filter-title-genres,
+  .filter-title-studio,
+  .filter-title-language,
+  .filter-title-status,
+  .filter-title-facts span,
+  .filter-title-tracks span,
+  .discovery-title-list small,
+  .ongoing-title-list span,
+  .discovery-empty
+) {
+  font-family: var(--font-ui);
+  font-size: var(--type-meta);
+  line-height: 1.4;
+}
+
+.catalog-browser :is(input, select, textarea) {
+  font-family: var(--font-ui);
+  font-size: var(--type-body);
+  line-height: 1.45;
+}
+
+.catalog-browser :is(
+  .catalog-main-search input,
+  .compact-select > summary,
+  .compact-select-options button,
+  .more-filter-button,
+  .filter-drawer > footer button,
+  .recent-search-list button,
+  .show-ongoing
+) {
+  font-size: var(--type-ui);
+}
+
+.catalog-browser :is(
+  .filter-title-summary,
+  .filter-title-genres,
+  .filter-title-studio,
+  .filter-title-meta span,
+  .filter-title-facts span,
+  .filter-title-tracks span
+) {
+  font-size: var(--type-meta);
+}
+
+.catalog-browser :is(.filter-title-language, .filter-title-status) {
+  font-size: var(--type-meta) !important;
+}
+
+.browse-experience :is(
+  .browse-experience__filter-choice small,
+  .browse-experience__filter-scope,
+  .browse-experience__scope-note,
+  .browse-experience__partial,
+  .browse-experience__attribution
+) {
+  font-family: var(--font-ui);
+  font-size: var(--type-meta);
+  line-height: 1.5;
+}
+
+.customer-shell :is(
+  .auto-scroll-clone small,
+  .country-multi-header span,
+  .country-multi-actions span,
+  .result-page-status span,
+  .discovery-view-select > span
+) {
+  font-family: var(--font-metadata);
+  font-size: var(--type-meta);
+  line-height: 1.4;
+}
+
+.customer-shell .auto-scroll-clone strong {
+  font-family: var(--font-editorial);
+  font-optical-sizing: auto;
+}
+
+.browse-experience__search label {
+  font-family: var(--font-metadata);
+  font-size: var(--type-meta);
+  line-height: 1.4;
+}
+
+.browse-experience__search input {
+  font-family: var(--font-body);
+  font-size: var(--type-body);
+}
+
+/* Focused corrections for legacy shorthands and undersized card/search copy. */
+.catalog-card .catalog-card__description {
+  font: 450 var(--type-body) / 1.55 var(--font-body) !important;
+}
+
+.catalog-card .catalog-card__reveal,
+.catalog-card .catalog-card__reveal > span {
+  font: 450 var(--type-body) / 1.55 var(--font-body) !important;
+}
+
+.catalog-card .catalog-card__identity,
+.catalog-card .catalog-card__identity small,
+.catalog-card .catalog-card__details .card-genres,
+.catalog-card .catalog-card__details .card-facts {
+  font-size: var(--type-ui);
+}
+
+.universal-title-copy > strong {
+  font-size: 1.25rem;
+  line-height: 1.16;
+}
+
+.universal-search-prompt > strong,
+.knowledge-node strong,
+.activity-title-list strong {
+  font-family: var(--font-editorial);
+  font-optical-sizing: auto;
+}
+
+.universal-title-copy > em,
+.universal-title-copy > small,
+.universal-title-meta b,
+.universal-series-facts,
+.search-entity-strip :where(h2, small),
+.universal-search-pagination strong {
+  font-size: var(--type-meta);
+}
+
+/* Compact labels remain readable. Their voices describe what they mean:
+   taxonomy uses UI type, time and state use data type, and original-language
+   titles retain an editorial cadence. */
+.universal-title-art > small,
+.detail-genre-chips span,
+.knowledge-node small,
+.knowledge-node span {
+  font-family: var(--font-metadata);
+  font-size: var(--type-meta);
+  line-height: 1.4;
+}
+
+.detail-original-title {
+  font-family: var(--font-editorial);
+  font-size: var(--type-body);
+  font-style: italic;
+  font-optical-sizing: auto;
+  letter-spacing: 0.02em;
+  line-height: 1.45;
+  text-transform: none;
+}
+
+.episode-title-row strong,
+.episode-list > li > div:nth-child(3) > span {
+  font-family: var(--font-data);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums slashed-zero;
+  line-height: 1.4;
+}
+
+.episode-list button,
+.title-state-actions button {
+  font-family: var(--font-ui);
+  font-size: var(--type-ui);
+  line-height: 1.35;
+}
+
+/* Authentication text communicates security and account actions, so none of
+   it is treated as decorative fine print. */
+.viewer-auth-shell .social-auth > p,
+.viewer-auth-shell .auth-divider,
+.viewer-auth-shell .field-hint,
+.viewer-auth-shell .form-error,
+.viewer-auth-shell .form-links,
+.viewer-auth-shell .security-message,
+.viewer-auth-shell .form-description,
+.viewer-auth-shell .captcha-local strong,
+.viewer-auth-shell .captcha-local small,
+.viewer-auth-shell .auth-privacy,
+.viewer-auth-shell .login-form label {
+  font-family: var(--font-ui);
+  font-size: var(--type-meta);
+  line-height: 1.45;
+}
+
+.viewer-auth-shell .social-provider,
+.viewer-auth-shell .login-form button {
+  font-family: var(--font-ui);
+  font-size: var(--type-ui);
+  line-height: 1.35;
+}
+
+.viewer-auth-shell .login-form input {
+  font-family: var(--font-body);
+  font-size: var(--type-body);
+}
+
+.hero-meta,
+.hero-slideshow .hero-meta span {
+  font-size: var(--type-meta) !important;
+}
+
+.back-link,
+.external-title-note {
+  font-family: var(--font-ui);
+  font-size: var(--type-meta);
+  line-height: 1.55;
+}
+
+/* The main synopsis previously used a Georgia shorthand. Match its
+   specificity so long-form story copy uses the reading voice instead. */
+.detail-body article > p:not(.eyebrow) {
+  font-family: var(--font-body);
+  font-size: clamp(1.125rem, 1.5vw, 1.3rem);
+  font-weight: 450;
+  line-height: 1.68;
+}
+
+.detail-body :is(dt, dd),
+.availability span {
+  font-family: var(--font-body);
+  font-size: var(--type-meta);
+  line-height: 1.5;
+}
+
+/* Playback keeps its restrained overlay, but instructions and controls stay
+   legible. Captions inherit the same reading face without changing size. */
+.watch-page {
+  font-family: var(--font-body);
+}
+
+.player-top strong {
+  font-family: var(--font-editorial);
+  font-optical-sizing: auto;
+}
+
+.player-top > a,
+.player-top span,
+.control-row :is(button, label, select),
+.control-row > span,
+.player-button,
+.skip-button,
+.player-state {
+  font-family: var(--font-ui);
+  font-size: var(--type-meta);
+  line-height: 1.4;
+}
+
+.control-row > span {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.player-shell video::cue {
+  font-family: var(--font-body);
+}
+
+.player-top span,
+.control-row label {
+  color: #aaa49d;
+}
+
+/* Studio is owner-only but belongs to the same product. It receives the same
+   semantic voices with a denser 13px metadata floor appropriate for analytics. */
+.studio-shell {
+  --studio-type-body: 0.9375rem;
+  --studio-type-ui: 0.875rem;
+  --studio-type-meta: 0.8125rem;
+  font-family: var(--font-body);
+}
+
+.studio-shell :is(h1, h2, h3, h4),
+.studio-shell :is(.preview-short, .studio-dashboard-empty > strong) {
+  font-family: var(--font-editorial);
+  font-optical-sizing: auto;
+  text-wrap: balance;
+}
+
+.studio-shell :is(p, li),
+.studio-shell :is(input, select, textarea) {
+  font-family: var(--font-body);
+}
+
+.studio-shell :is(button, label, summary, nav a),
+.studio-shell :is(.studio-primary, .studio-secondary, .studio-tertiary) {
+  font-family: var(--font-ui);
+  font-size: var(--studio-type-ui);
+}
+
+.studio-shell :is(input, select, textarea) {
+  font-size: var(--type-body);
+  line-height: 1.45;
+}
+
+.studio-shell :is(
+  small,
+  time,
+  dt,
+  .eyebrow,
+  .studio-nav-index,
+  .studio-nav-group > p,
+  .studio-health,
+  .studio-access-card > span,
+  .studio-access-card > strong,
+  .studio-access-card button,
+  .studio-command-actions .studio-tertiary,
+  .studio-dashboard-panel > header > a,
+  .studio-alert-summary,
+  .studio-action-link
+) {
+  font-family: var(--font-metadata);
+  font-size: var(--studio-type-meta);
+  line-height: 1.4;
+}
+
+.studio-shell :is(
+  [class*="status"],
+  [class*="health"],
+  [class*="metric"],
+  [class*="ledger"],
+  [class*="legend"],
+  [class*="trend"],
+  [class*="activity"],
+  [class*="meta"]
+) :is(span, small, time, dt, p, a) {
+  font-family: var(--font-metadata);
+  font-size: var(--studio-type-meta);
+  line-height: 1.4;
+}
+
+.studio-shell .studio-action-link {
+  font-size: var(--studio-type-meta) !important;
+}
+
+.studio-shell .studio-brand-lockup :is(.wordmark span, p),
+.studio-shell .studio-slate-summary span,
+.studio-shell .studio-status-legend strong,
+.studio-shell .audience-panel > footer strong,
+.studio-shell .studio-action-link b {
+  font-family: var(--font-metadata);
+  font-size: var(--studio-type-meta);
+  line-height: 1.4;
+}
+
+.studio-shell aside nav a {
+  font-family: var(--font-ui);
+  font-size: var(--studio-type-ui);
+}
+
+.studio-shell :is(
+  .signed-in-as,
+  .studio-revenue-notice,
+  .studio-world-pulse > header p:last-child
+) {
+  font-family: var(--font-body);
+  font-size: var(--studio-type-body);
+  line-height: 1.6;
+}
+
+.studio-shell .activity-panel li strong,
+.studio-shell .studio-trend-columns li strong {
+  font-family: var(--font-ui);
+  font-size: var(--studio-type-ui);
+  line-height: 1.35;
+}
+
+.studio-shell .studio-trend-poster b,
+.studio-shell .studio-trend-columns li i {
+  color: #aaa39b;
+  font-family: var(--font-data);
+  font-size: var(--studio-type-meta);
+  font-variant-numeric: tabular-nums slashed-zero;
+  line-height: 1.3;
+}
+
+/* Muted still means readable. These informational labels exceed 4.5:1 on
+   the Studio and player surfaces instead of disappearing into charcoal. */
+.studio-shell :is(
+  dt,
+  time,
+  .studio-nav-index,
+  .studio-nav-group > p,
+  .studio-access-card > span,
+  .studio-access-card > strong,
+  .studio-health,
+  .studio-hero-ledger dt,
+  .studio-metric-strip small,
+  .studio-metric-strip p,
+  .studio-spark-bars span,
+  .audience-panel > footer,
+  .studio-status-legend,
+  .activity-panel li > span,
+  .activity-panel li small,
+  .activity-panel time,
+  .studio-analytics-intro dt,
+  .studio-audience-chart > header ul,
+  .studio-grouped-chart small,
+  .studio-event-ledger li > span,
+  .studio-event-ledger li > small,
+  .studio-trend-heading small,
+  .studio-trend-columns li small,
+  .studio-trend-columns li > div:nth-child(2) > span,
+  .payout-ledger small,
+  .payout-ledger time
+) {
+  color: #aaa39b;
+}
+
+.studio-shell :is(
+  .studio-command-hero > div > p:not(.eyebrow),
+  .studio-dashboard-empty p,
+  .studio-analytics-intro > div > p:last-child,
+  .studio-quality-panel > p,
+  .studio-event-ledger li > p,
+  .studio-world-pulse > header p:last-child,
+  .studio-trend-columns li p,
+  .studio-world-offline p
+) {
+  color: #b7afa7;
+}
+
+.studio-shell :is(
+  dd,
+  time,
+  .studio-hero-ledger dd,
+  .studio-metric-strip strong,
+  .studio-slate-summary strong,
+  .studio-quality-panel dd,
+  .studio-revenue-brief dd,
+  .revenue-ledger strong,
+  .payout-ledger strong
+) {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums slashed-zero;
+  letter-spacing: -0.02em;
+}
+
+@media (max-width: 700px) {
+  :root {
+    --type-display-xl: clamp(2.75rem, 14vw, 5rem);
+    --type-display-lg: clamp(2.5rem, 12vw, 4.5rem);
+    --type-display-md: clamp(2rem, 9vw, 3.5rem);
+  }
+
+  .catalog-card .catalog-card__description {
+    font-size: var(--type-body) !important;
+  }
+
+  .catalog-card .catalog-card__identity,
+  .catalog-card .catalog-card__identity small,
+  .catalog-card .catalog-card__details .card-genres,
+  .catalog-card .catalog-card__details .card-facts,
+  .hero-slideshow .hero-meta span {
+    font-size: var(--type-meta) !important;
+  }
+
+  :is(
+    .customer-shell,
+    .catalog-page,
+    .detail-page,
+    .browse-experience,
+    .external-title-shell,
+    .profiles-shell,
+    .viewer-auth-shell,
+    .account-page,
+    .studio-shell
+  ) :is(input, select, textarea) {
+    font-size: 1rem !important;
+  }
+
+  .cinematic-wordmark strong,
+  .cinematic-mobile-dock > a,
+  .cinematic-mobile-primary > a,
+  .cinematic-mobile-menu-groups nav > a,
+  .cinematic-mobile-account > a {
+    font-size: var(--type-meta);
+  }
+}
+
+/* On short phones the enlarged, readable hero copy needs its own vertical
+   runway. Start below the fixed header and reserve enough scroll space for
+   both actions to clear the fixed navigation dock. */
+@media (max-width: 390px) and (max-height: 700px) {
+  .hero-slideshow.catalog-hero {
+    box-sizing: border-box;
+    height: auto;
+    min-height: max(820px, calc(100svh + 220px));
+    max-height: none;
+    justify-content: flex-start;
+    padding-block-start: max(5.5rem, calc(env(safe-area-inset-top) + 5.25rem));
+    padding-block-end: max(7rem, calc(env(safe-area-inset-bottom) + 6rem));
+  }
+
+  .hero-slideshow .hero-slide-copy {
+    justify-content: flex-start;
+    padding-block-start: 0;
+  }
+}
+
+/* Narrow screens cannot spare synopsis width for edge-mounted carousel
+   controls. Keep both controls in the clear strip between nav and copy. */
+@media (max-width: 360px) {
+  .hero-slideshow .hero-arrow {
+    top: max(1.125rem, env(safe-area-inset-top));
+    transform: none;
+  }
+
+  .hero-slideshow .hero-arrow:hover {
+    transform: scale(1.04);
+  }
+}
+
+@media print {
+  html,
+  body {
+    font-family: var(--font-body);
+    font-synthesis: none;
+  }
+}

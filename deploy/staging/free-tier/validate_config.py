@@ -7,7 +7,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parent
-DEFAULT_INPUT = ROOT / "credentials.local.env"
+PROJECT_ROOT = ROOT.parents[2]
+DEFAULT_INPUT = PROJECT_ROOT / ".env"
+EXAMPLE_INPUT = ROOT / "credentials.example.env"
 REQUIRED = {
     "STAGING_WEB_ORIGIN", "STAGING_API_ORIGIN", "STAGING_COOKIE_DOMAIN",
     "DATABASE_URL", "REDIS_URL", "S3_ENDPOINT", "S3_PUBLIC_ENDPOINT",
@@ -15,6 +17,8 @@ REQUIRED = {
     "SESSION_SECRET", "METRICS_BEARER_TOKEN", "GEO_ASSERTION_SECRET",
     "SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD",
     "SMTP_FROM_EMAIL", "ERROR_TRACKING_DSN", "FEATURE_SCENE_LENS_ENABLED",
+    "BRAND_AI_PROVIDER", "BRAND_AI_MODEL", "BRAND_AI_TIMEOUT_SECONDS",
+    "BRAND_AI_RATE_LIMIT_PER_HOUR", "OPENAI_API_KEY",
     "FEATURE_ASK_MOVIE_ENABLED", "FEATURE_COMMUNITY_ENABLED",
     "FEATURE_WATCH_PARTIES_ENABLED", "FEATURE_EXPERIMENTAL_RECOMMENDATIONS_ENABLED",
 }
@@ -30,7 +34,7 @@ def load(path: Path) -> dict[str, str]:
             raise ValueError(f"invalid line {number}")
         key, value = line.split("=", 1)
         if key not in REQUIRED:
-            raise ValueError(f"unknown label: {key}")
+            continue
         if key in values:
             raise ValueError(f"duplicate label: {key}")
         values[key] = value
@@ -56,6 +60,20 @@ def validate(values: dict[str, str], deploy: bool) -> None:
     for key in ("SESSION_SECRET", "METRICS_BEARER_TOKEN", "GEO_ASSERTION_SECRET"):
         if len(values[key]) < 32:
             raise ValueError(f"{key} must contain at least 32 characters")
+    if values["BRAND_AI_PROVIDER"] not in {"disabled", "openai"}:
+        raise ValueError("BRAND_AI_PROVIDER must be disabled or openai")
+    if values["BRAND_AI_PROVIDER"] == "openai" and not values["OPENAI_API_KEY"]:
+        raise ValueError("BRAND_AI_PROVIDER=openai requires OPENAI_API_KEY")
+    if values["BRAND_AI_MODEL"].startswith("ft:"):
+        raise ValueError("BRAND_AI_MODEL must not use a fine-tuned model")
+    if not values["BRAND_AI_TIMEOUT_SECONDS"].isdigit() or not 3 <= int(
+        values["BRAND_AI_TIMEOUT_SECONDS"]
+    ) <= 30:
+        raise ValueError("BRAND_AI_TIMEOUT_SECONDS must be between 3 and 30")
+    if not values["BRAND_AI_RATE_LIMIT_PER_HOUR"].isdigit() or not 1 <= int(
+        values["BRAND_AI_RATE_LIMIT_PER_HOUR"]
+    ) <= 120:
+        raise ValueError("BRAND_AI_RATE_LIMIT_PER_HOUR must be between 1 and 120")
     features = sorted(key for key in REQUIRED if key.startswith("FEATURE_"))
     invalid = [key for key in features if values[key] not in {"true", "false"}]
     if invalid:

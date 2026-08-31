@@ -4,8 +4,8 @@ import Link from "next/link";
 import Script from "next/script";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
+import { apiGatewayPath } from "@/app/lib/api-gateway";
 
-const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8000";
 const providerPresentation = { google: { label: "Google", mark: "G" }, microsoft: { label: "Microsoft", mark: "⊞" }, github: { label: "GitHub", mark: "⌘" }, apple: { label: "Apple", mark: "●" } };
 type AuthCapabilities = { captcha: { required: boolean; test_mode: boolean }; providers: { id: keyof typeof providerPresentation; label: string; enabled: boolean }[] };
 type RememberedAccount = { id: string; email: string; provider: string; label: string };
@@ -19,13 +19,13 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const [selectedEmail, setSelectedEmail] = useState("");
 
   useEffect(() => {
-    fetch(`${apiOrigin}/auth/oauth/providers`).then((response) => response.ok ? response.json() : Promise.reject()).then(setCapabilities).catch(() => setCapabilities(null));
-    fetch(`${apiOrigin}/auth/remembered-accounts`, { credentials: "include" }).then((response) => response.ok ? response.json() : Promise.reject()).then((data) => setRemembered(data.accounts ?? [])).catch(() => setRemembered([]));
+    fetch(apiGatewayPath("/auth/oauth/providers")).then((response) => response.ok ? response.json() : Promise.reject()).then(setCapabilities).catch(() => setCapabilities(null));
+    fetch(apiGatewayPath("/auth/remembered-accounts"), { credentials: "include" }).then((response) => response.ok ? response.json() : Promise.reject()).then((data) => setRemembered(data.accounts ?? [])).catch(() => setRemembered([]));
   }, []);
 
   function chooseAccount(account: RememberedAccount) {
     if (account.provider !== "email") {
-      router.push(`${apiOrigin}/auth/oauth/${account.provider}/start`);
+      window.location.assign(apiGatewayPath(`/auth/oauth/${account.provider}/start`));
       return;
     }
     setSelectedEmail(account.email);
@@ -33,7 +33,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   }
 
   async function removeAccount(account: RememberedAccount) {
-    await fetch(`${apiOrigin}/auth/remembered-accounts/${account.id}`, { method: "DELETE", credentials: "include" });
+    await fetch(apiGatewayPath(`/auth/remembered-accounts/${account.id}`), { method: "DELETE", credentials: "include" });
     setRemembered((current) => current.filter((item) => item.id !== account.id));
   }
 
@@ -49,7 +49,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       captcha_token: capabilities?.captcha.test_mode ? "local-captcha-pass" : data.get("cf-turnstile-response"),
     };
     try {
-      const response = await fetch(`${apiOrigin}/auth/${mode === "register" ? "register" : "login"}`, {
+      const response = await fetch(apiGatewayPath(`/auth/${mode === "register" ? "register" : "login"}`), {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -79,7 +79,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       <p>Continue securely with</p><div className="social-auth-grid">
         {Object.entries(providerPresentation).map(([id, item]) => {
           const configured = capabilities?.providers.find((provider) => provider.id === id)?.enabled;
-          return configured ? <a className={`social-provider provider-${id}`} href={`${apiOrigin}/auth/oauth/${id}/start`} key={id}><i aria-hidden="true">{item.mark}</i><span>{item.label}</span></a> : <span className="social-provider is-unavailable" title="Add this provider's credentials to enable it" key={id} aria-disabled="true"><i aria-hidden="true">{item.mark}</i><span>{item.label}</span><small>Setup</small></span>;
+          return configured ? <a className={`social-provider provider-${id}`} href={apiGatewayPath(`/auth/oauth/${id}/start`)} key={id}><i aria-hidden="true">{item.mark}</i><span>{item.label}</span></a> : <span className="social-provider is-unavailable" title="Add this provider's credentials to enable it" key={id} aria-disabled="true"><i aria-hidden="true">{item.mark}</i><span>{item.label}</span><small>Setup</small></span>;
         })}
       </div><div className="auth-divider"><span>or use email</span></div>
     </section><form className="login-form" onSubmit={submit}>

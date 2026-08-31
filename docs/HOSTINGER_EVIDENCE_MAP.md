@@ -24,8 +24,8 @@ customer data, or recovery codes.
 | `recovery/backup_job` | Hostinger `operations.sh backup`, freshness metric and alert | Successful private off-site dump/manifest plus retention/versioning evidence | External |
 | `recovery/isolated_restore` | guarded `operations.sh restore` and restore verifier | Separate empty `aperture_restore_*` result with digest/head/table parity | External |
 | `recovery/rpo_rto` | Backup/restore runbooks | Measured provider RPO/RTO against owner-approved targets | External |
-| `rollback/deployment_active` | digest-only Compose/topology audit and production preflight | Exact API/web/backup digests, migration head, ready state and smoke report | External |
-| `rollback/traffic_rollback` | `hostinger_rollback.py --mode inspect/execute` | Dual-approved known-good digest set and completed rollback execution record | External |
+| `rollback/deployment_active` | digest-only Compose/topology audit and production preflight | Exact API/media-worker/web/backup/Caddy/storage/node-exporter/Blackbox digests, API/worker binary-boundary reports, eight-artifact vulnerability scans, migration head, ready state and smoke report | External |
+| `rollback/traffic_rollback` | CI-managed forward revert through `quality.yml`/`deploy_release.py`; legacy script only before controller initialization | Reviewed revert commit, protected deployment approval, controller release/compensation record, and passing smoke evidence | External |
 | `rollback/post_rollback_acceptance` | public smoke and bad-deployment runbook | Healthy preflight/smoke/product subset plus complete alert-window observation | External |
 | `observability/error_tracking` | production DSN validation and structured logging | Synthetic error received without PII in owner-approved project | External |
 | `observability/alert_delivery` | 17 Prometheus rules, private host/API/blackbox collectors | Synthetic critical alerts received, acknowledged, and resolved | External |
@@ -41,7 +41,8 @@ Before collecting any row, bind the record to:
 - the non-secret release ID and infrastructure version;
 - deployment UTC time;
 - migration head `b7e4c91d2a60`;
-- exact web, API, media-worker, scene-worker, and backup image digests;
+- exact web, API, media-worker, scene-worker, backup, Caddy, storage, node-exporter, and Blackbox
+  image digests; Scene must equal API while the eight built artifact digests remain distinct;
 - the Hostinger configuration revision and unresolved-risk register.
 
 Run `deploy/production/launch_evidence.py --mode verify` only after all references and human

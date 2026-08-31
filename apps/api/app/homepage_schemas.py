@@ -1,8 +1,9 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.catalog_schemas import NamedRecordResponse
 from app.models import HomepageSource
 
 
@@ -101,8 +102,11 @@ class HomepageTitle(BaseModel):
     title: str
     slug: str
     short_description: str
+    release_date: date | None
     maturity_rating: str | None
     runtime_minutes: int | None = None
+    season_count: int | None = None
+    genres: list[NamedRecordResponse] = Field(default_factory=list)
     poster_url: str | None = None
     backdrop_url: str | None = None
     metadata_provider: str | None = None

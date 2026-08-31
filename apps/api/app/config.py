@@ -1,11 +1,27 @@
+import re
 from functools import lru_cache
+from pathlib import Path
 
-from pydantic import AnyHttpUrl, model_validator
+from pydantic import AnyHttpUrl, EmailStr, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def repository_env() -> Path:
+    for directory in Path(__file__).resolve().parents:
+        if (directory / ".env.example").is_file() and (directory / "package.json").is_file():
+            return directory / ".env"
+    return Path.cwd() / ".env"
+
+
+ROOT_ENV = repository_env()
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=("../../.env", ".env"), extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=ROOT_ENV,
+        env_ignore_empty=True,
+        extra="ignore",
+    )
 
     app_env: str = "development"
     api_origin: AnyHttpUrl = "http://localhost:8000"
@@ -27,6 +43,8 @@ class Settings(BaseSettings):
     admin_web_origin: AnyHttpUrl | None = None
     private_studio_required: bool = False
     studio_edge_secret: str | None = None
+    studio_dev_auto_login: bool = False
+    studio_dev_admin_email: EmailStr | None = None
     customer_session_days: int = 30
     admin_session_hours: int = 12
     registration_rate_limit_per_hour: int = 10
@@ -40,10 +58,33 @@ class Settings(BaseSettings):
     oauth_apple_client_id: str | None = None
     oauth_apple_client_secret: str | None = None
     turnstile_secret_key: str | None = None
+    turnstile_site_key: str | None = None
+    cloudflare_turnstile_api_token: SecretStr | None = None
+    turnstile_hostname_limit: int = 10
+    brand_ai_provider: str = "disabled"
+    brand_ai_model: str = "gpt-5-mini"
+    brand_ai_timeout_seconds: float = 12.0
+    brand_ai_rate_limit_per_hour: int = 30
+    openai_api_key: SecretStr | None = None
+    custom_domains_enabled: bool = False
+    custom_domain_infrastructure_ready: bool = False
+    custom_domain_provider: str = "disabled"
+    custom_domain_cname_target: str | None = None
+    custom_domain_max_per_site: int = 20
+    custom_domain_edge_secret: SecretStr | None = None
+    cloudflare_api_token: SecretStr | None = None
+    cloudflare_custom_hostnames_api_token: SecretStr | None = None
+    cloudflare_zone_id: str | None = None
+    cloudflare_account_id: str | None = None
+    cloudflare_site_domains_kv_namespace_id: str | None = None
+    cloudflare_api_timeout_seconds: float = 8.0
     tmdb_api_read_access_token: str | None = None
     tmdb_api_key: str | None = None
     tmdb_language: str = "en-CA"
     tmdb_region: str = "CA"
+    movie_metadata_mode: str = "legacy"
+    aperture_movie_api_origin: AnyHttpUrl | None = None
+    aperture_movie_api_key: str | None = None
     captcha_required: bool = False
     captcha_test_mode: bool = True
     smtp_host: str | None = None
@@ -55,6 +96,7 @@ class Settings(BaseSettings):
     billing_provider: str = "development_stub"
     stripe_secret_key: str | None = None
     stripe_webhook_secret: str | None = None
+    stripe_payouts_enabled: bool = False
     analytics_retention_days: int = 90
     analytics_max_batch_size: int = 25
     error_tracking_dsn: str | None = None
@@ -67,6 +109,7 @@ class Settings(BaseSettings):
     scene_job_lease_seconds: int = 300
     scene_job_max_attempts: int = 3
     media_delivery_mode: str = "api_proxy"
+    media_source_origins: str = ""
     cdn_public_origin: AnyHttpUrl | None = None
     cdn_signing_secret: str | None = None
     cdn_origin_secret: str | None = None
@@ -87,6 +130,46 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         placeholders = ("replace_", "change_me", "changeme")
+        self.billing_provider = self.billing_provider.strip().lower()
+        if self.billing_provider not in {"disabled", "development_stub", "stripe"}:
+            raise ValueError("BILLING_PROVIDER must be disabled, development_stub, or stripe")
+        self.brand_ai_provider = self.brand_ai_provider.strip().lower()
+        if self.brand_ai_provider not in {"disabled", "openai"}:
+            raise ValueError("BRAND_AI_PROVIDER must be disabled or openai")
+        self.custom_domain_provider = self.custom_domain_provider.strip().lower()
+        if self.custom_domain_provider not in {"disabled", "cloudflare"}:
+            raise ValueError("CUSTOM_DOMAIN_PROVIDER must be disabled or cloudflare")
+        if not 1 <= self.custom_domain_max_per_site <= 100:
+            raise ValueError("CUSTOM_DOMAIN_MAX_PER_SITE must be between 1 and 100")
+        if not 2 <= self.cloudflare_api_timeout_seconds <= 15:
+            raise ValueError("CLOUDFLARE_API_TIMEOUT_SECONDS must be between 2 and 15")
+        if self.custom_domains_enabled and self.session_cookie_domain is not None:
+            raise ValueError("Custom-domain customer cookies must remain host-only")
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{1,100}", self.brand_ai_model):
+            raise ValueError("BRAND_AI_MODEL contains unsupported characters")
+        if self.brand_ai_model.startswith("ft:"):
+            raise ValueError("BRAND_AI_MODEL must not use a fine-tuned model")
+        if not 3 <= self.brand_ai_timeout_seconds <= 30:
+            raise ValueError("BRAND_AI_TIMEOUT_SECONDS must be between 3 and 30")
+        if not 1 <= self.brand_ai_rate_limit_per_hour <= 120:
+            raise ValueError("BRAND_AI_RATE_LIMIT_PER_HOUR must be between 1 and 120")
+        openai_api_key = (
+            self.openai_api_key.get_secret_value() if self.openai_api_key is not None else ""
+        )
+        if self.brand_ai_provider == "openai" and not openai_api_key:
+            raise ValueError("OPENAI_API_KEY is required when BRAND_AI_PROVIDER=openai")
+        if (
+            self.app_env in {"staging", "production"}
+            and self.brand_ai_provider == "openai"
+            and openai_api_key.lower().startswith((*placeholders, "dummy"))
+        ):
+            raise ValueError("OPENAI_API_KEY must not be a placeholder")
+        if self.studio_dev_auto_login and self.app_env != "development":
+            raise ValueError("STUDIO_DEV_AUTO_LOGIN is allowed only in development")
+        if self.studio_dev_auto_login and self.studio_dev_admin_email is None:
+            raise ValueError(
+                "STUDIO_DEV_ADMIN_EMAIL is required when STUDIO_DEV_AUTO_LOGIN is enabled"
+            )
         if self.app_env in {"staging", "production"} and (
             self.session_secret.lower().startswith(placeholders) or len(self.session_secret) < 32
         ):
@@ -103,12 +186,34 @@ class Settings(BaseSettings):
             and not self.turnstile_secret_key
         ):
             raise ValueError("TURNSTILE_SECRET_KEY is required when CAPTCHA is enabled")
+        if not 1 <= self.turnstile_hostname_limit <= 200:
+            raise ValueError("TURNSTILE_HOSTNAME_LIMIT must be between 1 and 200")
+        if (
+            self.custom_domains_enabled
+            and self.captcha_required
+            and (
+                self.turnstile_hostname_limit < 2
+                or self.custom_domain_max_per_site > self.turnstile_hostname_limit - 1
+            )
+        ):
+            raise ValueError(
+                "CUSTOM_DOMAIN_MAX_PER_SITE must reserve one Turnstile hostname slot "
+                "for WEB_HOSTNAME"
+            )
         if self.app_env in {"staging", "production"} and (
             any(value in self.database_url.lower() for value in placeholders)
             or self.s3_access_key.lower().startswith(placeholders)
             or self.s3_secret_key.lower().startswith(placeholders)
         ):
             raise ValueError("Database and object-storage credentials must be environment-specific")
+        if self.movie_metadata_mode not in {"legacy", "gateway"}:
+            raise ValueError("MOVIE_METADATA_MODE must be legacy or gateway")
+        if self.movie_metadata_mode == "gateway" and not all(
+            (self.aperture_movie_api_origin, self.aperture_movie_api_key)
+        ):
+            raise ValueError(
+                "Gateway metadata requires APERTURE_MOVIE_API_ORIGIN and APERTURE_MOVIE_API_KEY"
+            )
         if self.app_env in {"staging", "production"} and not all(
             (self.smtp_host, self.smtp_username, self.smtp_password, self.smtp_from_email)
         ):
@@ -126,6 +231,8 @@ class Settings(BaseSettings):
             raise ValueError(
                 "STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are required for Stripe billing"
             )
+        if self.stripe_payouts_enabled and self.billing_provider != "stripe":
+            raise ValueError("STRIPE_PAYOUTS_ENABLED requires BILLING_PROVIDER=stripe")
         if (
             self.app_env == "production"
             and self.billing_provider == "stripe"
@@ -238,6 +345,73 @@ class Settings(BaseSettings):
         if self.private_studio_required and self.admin_session_cookie_domain is not None:
             raise ValueError("Private Studio administrator cookies must remain host-only")
         return self
+
+    @property
+    def custom_domains_available(self) -> bool:
+        """Return the effective feature gate without exposing provider credentials."""
+        cloudflare_identifier = re.compile(r"^[0-9a-fA-F]{32}$")
+        api_token = (
+            self.cloudflare_custom_hostnames_api_token.get_secret_value()
+            if self.cloudflare_custom_hostnames_api_token is not None
+            else ""
+        )
+        edge_secret = (
+            self.custom_domain_edge_secret.get_secret_value()
+            if self.custom_domain_edge_secret is not None
+            else ""
+        )
+        turnstile_api_token = (
+            self.cloudflare_turnstile_api_token.get_secret_value()
+            if self.cloudflare_turnstile_api_token is not None
+            else ""
+        )
+        try:
+            cname_target = (
+                (self.custom_domain_cname_target or "")
+                .strip()
+                .rstrip(".")
+                .encode("idna")
+                .decode("ascii")
+                .lower()
+            )
+        except UnicodeError:
+            cname_target = ""
+        valid_cname_target = bool(
+            len(cname_target) <= 253
+            and "." in cname_target
+            and all(
+                re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+                for label in cname_target.split(".")
+            )
+        )
+        non_placeholder_secrets = not api_token.lower().startswith(
+            ("dummy", "replace_", "change_me", "changeme")
+        ) and not edge_secret.lower().startswith(("dummy", "replace_", "change_me", "changeme"))
+        turnstile_ready = bool(
+            not self.captcha_required
+            or (
+                len(turnstile_api_token) >= 20
+                and not turnstile_api_token.lower().startswith(
+                    ("dummy", "replace_", "change_me", "changeme")
+                )
+                and re.fullmatch(r"[A-Za-z0-9_-]{10,32}", self.turnstile_site_key or "")
+            )
+        )
+        return bool(
+            self.custom_domains_enabled
+            and self.custom_domain_infrastructure_ready
+            and self.custom_domain_provider == "cloudflare"
+            and len(api_token) >= 20
+            and len(edge_secret) >= 32
+            and non_placeholder_secrets
+            and turnstile_ready
+            and valid_cname_target
+            and cloudflare_identifier.fullmatch(self.cloudflare_zone_id or "")
+            and cloudflare_identifier.fullmatch(self.cloudflare_account_id or "")
+            and cloudflare_identifier.fullmatch(
+                self.cloudflare_site_domains_kv_namespace_id or ""
+            )
+        )
 
 
 @lru_cache

@@ -1,4 +1,4 @@
-"""Credential-free smoke checks for a deployed HTTPS customer/API edge."""
+"""Credential-free smoke checks for a deployed HTTPS customer edge."""
 
 import argparse
 import json
@@ -18,14 +18,14 @@ class Response:
     body: bytes
 
 
-def origin(label: str, value: str, *, allow_path: bool = False) -> str:
+def origin(label: str, value: str) -> str:
     parsed = urlsplit(value)
     if (
         parsed.scheme != "https"
         or not parsed.hostname
         or parsed.query
         or parsed.fragment
-        or (not allow_path and parsed.path not in {"", "/"})
+        or parsed.path not in {"", "/"}
     ):
         raise ValueError(f"{label} must be a valid HTTPS edge base")
     return value.rstrip("/") + "/"
@@ -72,7 +72,16 @@ def security_headers(response: Response, *, production: bool) -> None:
         raise RuntimeError("response does not deny framing")
 
 
-def verify(web_origin: str, api_origin: str, *, production: bool, context) -> dict[str, object]:
+def private_gateway_headers(response: Response) -> None:
+    cache_control = response.headers.get("cache-control", "").lower()
+    if "private" not in cache_control or "no-store" not in cache_control:
+        raise RuntimeError("same-origin gateway response is not private and non-cacheable")
+    vary = {value.strip().lower() for value in response.headers.get("vary", "").split(",")}
+    if "cookie" not in vary:
+        raise RuntimeError("same-origin gateway response does not vary on Cookie")
+
+
+def verify(web_origin: str, *, production: bool, context) -> dict[str, object]:
     web = fetch(urljoin(web_origin, "/"), context)
     if web.status != 200 or "text/html" not in web.headers.get("content-type", ""):
         raise RuntimeError("customer edge did not return HTML")
@@ -85,7 +94,13 @@ def verify(web_origin: str, api_origin: str, *, production: bool, context) -> di
     if production and any(code != 404 for code in hidden_studio.values()):
         raise RuntimeError("Studio is exposed on the public web edge")
 
-    ready = fetch(urljoin(api_origin, "ready"), context)
+    gateway = fetch(urljoin(web_origin, "/api/gateway/auth/oauth/providers"), context)
+    if gateway.status != 200 or "application/json" not in gateway.headers.get("content-type", ""):
+        raise RuntimeError("same-origin API gateway failed")
+    security_headers(gateway, production=production)
+    private_gateway_headers(gateway)
+
+    ready = fetch(urljoin(web_origin, "/api/ready"), context)
     if ready.status != 200 or "application/json" not in ready.headers.get("content-type", ""):
         raise RuntimeError("API readiness failed")
     security_headers(ready, production=production)
@@ -96,20 +111,28 @@ def verify(web_origin: str, api_origin: str, *, production: bool, context) -> di
         raise RuntimeError("API dependencies are not ready")
 
     denied = {
-        "customer_account": fetch(urljoin(api_origin, "account"), context).status,
-        "studio_users": fetch(urljoin(api_origin, "admin/support/users"), context).status,
-        "metrics": fetch(urljoin(api_origin, "metrics"), context).status,
+        "customer_account": fetch(urljoin(web_origin, "/api/account"), context).status,
+        "oauth": fetch(urljoin(web_origin, "/api/auth/oauth/providers"), context).status,
+        "studio_users": fetch(urljoin(web_origin, "/api/admin/support/users"), context).status,
+        "metrics": fetch(urljoin(web_origin, "/api/metrics"), context).status,
     }
-    if any(code not in {401, 403, 404} for code in denied.values()):
-        raise RuntimeError("a protected API surface did not fail closed")
+    allowed_denial_statuses = {404} if production else {401, 403, 404}
+    if any(code not in allowed_denial_statuses for code in denied.values()):
+        raise RuntimeError("a direct API surface remains publicly routed")
+    forbidden_gateway = {
+        path: fetch(urljoin(web_origin, f"/api/gateway/{path}"), context).status
+        for path in ("billing", "edge-media", "metrics", "ready")
+    }
+    if any(code != 404 for code in forbidden_gateway.values()):
+        raise RuntimeError("a non-browser API surface is reachable through the gateway")
     if production:
-        for path in ("/docs", "/openapi.json", "/redoc"):
-            if fetch(urljoin(api_origin, path.removeprefix("/")), context).status != 404:
+        for path in ("/api/docs", "/api/openapi.json", "/api/redoc"):
+            if fetch(urljoin(web_origin, path), context).status != 404:
                 raise RuntimeError("production API documentation is publicly exposed")
     return {
         "event": "public_edge.verified",
         "status": "pass",
-        "checks": 11 if production else 6,
+        "checks": 20 if production else 14,
     }
 
 
@@ -119,12 +142,9 @@ def main() -> int:
     args = parser.parse_args()
     try:
         web = origin("SMOKE_WEB_ORIGIN", os.environ.get("SMOKE_WEB_ORIGIN", ""))
-        api = origin(
-            "SMOKE_API_ORIGIN", os.environ.get("SMOKE_API_ORIGIN", ""), allow_path=True
-        )
         ca_file = os.environ.get("SMOKE_CA_FILE")
         context = ssl.create_default_context(cafile=ca_file)
-        result = verify(web, api, production=args.environment == "production", context=context)
+        result = verify(web, production=args.environment == "production", context=context)
     except Exception:
         print(json.dumps({"event": "public_edge.failed", "status": "fail"}), file=sys.stderr)
         return 1

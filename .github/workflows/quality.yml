@@ -10,7 +10,9 @@ permissions:
 
 concurrency:
   group: quality-${{ github.ref }}
-  cancel-in-progress: true
+  # Pull-request checks may be superseded. A main-branch release must never be
+  # interrupted halfway through publication or deployment by a newer push.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   api:
@@ -37,17 +39,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
-      minio:
-        image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-        env:
-          MINIO_ROOT_USER: aperture_ci
-          MINIO_ROOT_PASSWORD: aperture_ci_storage_password
-        ports: ["9000:9000"]
-        options: >-
-          --health-cmd "curl -f http://localhost:9000/minio/health/live"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
     env:
       APP_ENV: test
       DATABASE_URL: postgresql+psycopg://aperture_ci:aperture_ci_password@127.0.0.1:5432/aperture_ci
@@ -62,8 +53,10 @@ jobs:
       CAPTCHA_REQUIRED: "false"
       CAPTCHA_TEST_MODE: "true"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
           cache: pip
@@ -73,6 +66,21 @@ jobs:
         run: |
           pip-audit --requirement apps/api/requirements.lock
           pip-audit --requirement apps/api/requirements-dev.lock
+      - name: Start private object storage
+        run: |
+          docker run --detach --name aperture-ci-minio \
+            --publish 127.0.0.1:9000:9000 \
+            --env MINIO_ROOT_USER=aperture_ci \
+            --env MINIO_ROOT_PASSWORD=aperture_ci_storage_password \
+            minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+          for ((attempt = 1; attempt <= 60; attempt++)); do
+            if curl --fail --silent --show-error http://127.0.0.1:9000/minio/health/live >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs aperture-ci-minio >&2
+          exit 1
       - name: Prepare database and private object bucket
         working-directory: apps/api
         run: |
@@ -84,13 +92,18 @@ jobs:
         run: |
           ruff check .
           pytest -q
+      - name: Stop private object storage
+        if: always()
+        run: docker rm --force aperture-ci-minio >/dev/null 2>&1 || true
 
   web:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -105,18 +118,606 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
+      - name: Install pinned deployment-test dependencies
+        run: >-
+          python -m pip install --disable-pip-version-check
+          pyyaml==6.0.3 pytest==9.0.3
       - name: Validate Hostinger topology and operations
         run: |
+          # Compose resolves the restore service's root env_file even while
+          # rendering dummy CI configuration. Supply the committed dummy
+          # contract temporarily; it contains no deployment credentials.
+          install -m 0600 deploy/production/hostinger/credentials.example.env .env
+          trap 'rm -f .env' EXIT
           python deploy/production/hostinger/validate_config.py --input deploy/production/hostinger/credentials.example.env --mode dummy
           COMPOSE_PROFILES=operations docker compose --env-file deploy/production/hostinger/credentials.example.env -f deploy/production/hostinger/compose.yml config --format json > /tmp/hostinger-compose.json
           python deploy/production/hostinger/validate_topology.py --input /tmp/hostinger-compose.json
-          HOSTINGER_RENDERED_COMPOSE=/tmp/hostinger-compose.json python -m unittest discover -s deploy/production/hostinger -p 'test_*.py'
-          (cd deploy/production/private-studio && python -m unittest discover -p 'test_*.py')
+          HOSTINGER_RENDERED_COMPOSE=/tmp/hostinger-compose.json python -m pytest -q deploy/production/hostinger
+          (cd deploy/production/private-studio && python -m pytest -q)
       - name: Validate actual Caddy policy
         run: |
-          docker run --rm -v "$PWD/deploy/production/hostinger:/etc/caddy:ro" -e WEB_HOSTNAME=stream.example.test -e ORIGIN_HOSTNAME=origin.example.test -e STORAGE_HOSTNAME=storage.example.test -e ACME_EMAIL=owner@example.test -e ORIGIN_EDGE_SECRET=origin-test-secret -e STUDIO_EDGE_SECRET=studio-test-secret caddy:2.10.2-alpine caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/caddy.json
+          docker build --file deploy/production/hostinger/caddy.Dockerfile --tag aperture-ci/caddy:policy .
+          docker run --rm -v "$PWD/deploy/production/hostinger:/etc/caddy:ro" -e WEB_HOSTNAME=stream.example.test -e ORIGIN_HOSTNAME=origin.example.test -e STORAGE_HOSTNAME=storage.example.test -e ACME_EMAIL=owner@example.test -e ORIGIN_EDGE_SECRET=origin-test-secret -e STUDIO_EDGE_SECRET=studio-test-secret -e CDN_ORIGIN_SECRET=cdn-origin-test-secret aperture-ci/caddy:policy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /tmp/caddy.json
           python deploy/production/hostinger/validate_caddy_policy.py --input /tmp/caddy.json
+
+  publish-release:
+    name: Publish immutable production candidate
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      vars.PRODUCTION_DEPLOY_ENABLED == 'true'
+    needs: [api, web, deployment-controls]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      release-id: ${{ steps.release.outputs.release_id }}
+      artifact-name: ${{ steps.release.outputs.artifact_name }}
+      source-sha: ${{ steps.release.outputs.source_sha }}
+    steps:
+      - name: Check out the tested commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify exact clean source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Create a secret-free release input
+        id: release
+        shell: bash
+        env:
+          REGISTRY_REPOSITORY_INPUT: ${{ vars.APERTURE_REGISTRY_REPOSITORY }}
+          WEB_HOSTNAME_INPUT: ${{ vars.APERTURE_WEB_HOSTNAME }}
+          STORAGE_HOSTNAME_INPUT: ${{ vars.APERTURE_STORAGE_HOSTNAME }}
+          CDN_HOSTNAME_INPUT: ${{ vars.APERTURE_CDN_HOSTNAME }}
+          POLICY_REQUIRE_APPROVED_INPUT: ${{ vars.APERTURE_POLICY_REQUIRE_APPROVED }}
+          CAPTCHA_REQUIRED_INPUT: ${{ vars.APERTURE_CAPTCHA_REQUIRED }}
+          TURNSTILE_SITE_KEY_INPUT: ${{ vars.APERTURE_TURNSTILE_SITE_KEY }}
+          APERTURE_REUSE_CADDY_IMAGE: ${{ vars.APERTURE_REUSE_CADDY_IMAGE }}
+          APERTURE_REUSE_STORAGE_IMAGE: ${{ vars.APERTURE_REUSE_STORAGE_IMAGE }}
+          APERTURE_REUSE_NODE_EXPORTER_IMAGE: ${{ vars.APERTURE_REUSE_NODE_EXPORTER_IMAGE }}
+          APERTURE_REUSE_BLACKBOX_IMAGE: ${{ vars.APERTURE_REUSE_BLACKBOX_IMAGE }}
+        run: |
+          set -euo pipefail
+          umask 077
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          release_id = (
+              f"sha-{os.environ['GITHUB_SHA']}-run-{os.environ['GITHUB_RUN_ID']}-"
+              f"{os.environ['GITHUB_RUN_ATTEMPT']}"
+          )
+          repository = os.environ["REGISTRY_REPOSITORY_INPUT"]
+          hostnames = {
+              "WEB_HOSTNAME": os.environ["WEB_HOSTNAME_INPUT"],
+              "STORAGE_HOSTNAME": os.environ["STORAGE_HOSTNAME_INPUT"],
+              "CDN_HOSTNAME": os.environ["CDN_HOSTNAME_INPUT"],
+          }
+          if not re.fullmatch(r"ghcr\.io/[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._/-]*", repository):
+              raise SystemExit("APERTURE_REGISTRY_REPOSITORY must be a lowercase GHCR path")
+          hostname_pattern = re.compile(
+              r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}"
+          )
+          if any(not hostname_pattern.fullmatch(value) for value in hostnames.values()):
+              raise SystemExit("all public Aperture hostname variables must be valid DNS names")
+          if os.environ["POLICY_REQUIRE_APPROVED_INPUT"] != "true":
+              raise SystemExit("APERTURE_POLICY_REQUIRE_APPROVED must be true")
+          captcha = os.environ["CAPTCHA_REQUIRED_INPUT"]
+          if captcha not in {"true", "false"}:
+              raise SystemExit("APERTURE_CAPTCHA_REQUIRED must be true or false")
+          turnstile = os.environ["TURNSTILE_SITE_KEY_INPUT"]
+          if "\n" in turnstile or "\r" in turnstile or (captcha == "true" and not turnstile):
+              raise SystemExit("a single-line Turnstile site key is required when CAPTCHA is enabled")
+
+          image_pattern = re.compile(
+              r"ghcr\.io/[a-z0-9][a-z0-9._/-]*:[a-z0-9][a-z0-9._-]*@sha256:[0-9a-f]{64}"
+          )
+          for label in (
+              "APERTURE_REUSE_CADDY_IMAGE",
+              "APERTURE_REUSE_STORAGE_IMAGE",
+              "APERTURE_REUSE_NODE_EXPORTER_IMAGE",
+              "APERTURE_REUSE_BLACKBOX_IMAGE",
+          ):
+              value = os.environ[label]
+              if not image_pattern.fullmatch(value) or "dummy" in value or "latest" in value:
+                  raise SystemExit(f"{label} must be an approved, immutable GHCR tag@digest reference")
+
+          values = {
+              "REGISTRY_REPOSITORY": repository,
+              "RELEASE_ID": release_id,
+              "RELEASE_PLATFORM": "linux/amd64",
+              **hostnames,
+              "POLICY_REQUIRE_APPROVED": "true",
+              "CAPTCHA_REQUIRED": captcha,
+              "NEXT_PUBLIC_TURNSTILE_SITE_KEY": turnstile,
+          }
+          # pin_release.py replaces these eight non-secret placeholders after
+          # every pushed artifact has been resolved to its registry digest.
+          for index, label in enumerate(
+              (
+                  "API_IMAGE",
+                  "MEDIA_WORKER_IMAGE",
+                  "WEB_IMAGE",
+                  "BACKUP_IMAGE",
+                  "CADDY_IMAGE",
+                  "STORAGE_IMAGE",
+                  "NODE_EXPORTER_IMAGE",
+                  "BLACKBOX_IMAGE",
+              ),
+              start=1,
+          ):
+              values[label] = f"pending.invalid/aperture/{index}@sha256:{index:064x}"
+
+          release_input = Path(os.environ["RUNNER_TEMP"]) / "aperture-release.env"
+          release_input.write_text(
+              "".join(f"{label}={value}\n" for label, value in values.items()),
+              encoding="utf-8",
+          )
+          release_input.chmod(0o600)
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"release_id={release_id}\n")
+              output.write(
+                  f"artifact_name=aperture-release-{os.environ['GITHUB_RUN_ID']}-"
+                  f"{os.environ['GITHUB_RUN_ATTEMPT']}\n"
+              )
+              output.write(f"source_sha={os.environ['GITHUB_SHA']}\n")
+          PY
+      - name: Build and publish the immutable candidate
+        shell: bash
+        env:
+          APERTURE_RELEASE_INPUT: ${{ runner.temp }}/aperture-release.env
+          APERTURE_RELEASE_CREDENTIALS: ${{ runner.temp }}/aperture-release.env
+          APERTURE_RELEASE_MANIFEST_DIR: ${{ runner.temp }}/release-manifests
+          APERTURE_REUSE_CADDY_IMAGE: ${{ vars.APERTURE_REUSE_CADDY_IMAGE }}
+          APERTURE_REUSE_STORAGE_IMAGE: ${{ vars.APERTURE_REUSE_STORAGE_IMAGE }}
+          APERTURE_REUSE_NODE_EXPORTER_IMAGE: ${{ vars.APERTURE_REUSE_NODE_EXPORTER_IMAGE }}
+          APERTURE_REUSE_BLACKBOX_IMAGE: ${{ vars.APERTURE_REUSE_BLACKBOX_IMAGE }}
+        run: |
+          set -euo pipefail
+          deploy/production/hostinger/build_release.sh
+      - name: Assemble the allowlisted deployment payload
+        shell: bash
+        env:
+          RELEASE_ID: ${{ steps.release.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          umask 077
+          manifest="$RUNNER_TEMP/release-manifests/$RELEASE_ID.release.json"
+          published_checksum="$RUNNER_TEMP/release-manifests/$RELEASE_ID.release.sha256"
+          test -s "$manifest"
+          test -s "$published_checksum"
+          (cd "$(dirname "$manifest")" && sha256sum --strict --check "$(basename "$published_checksum")")
+
+          payload="$RUNNER_TEMP/release-payload"
+          install -d -m 0700 "$payload"
+          # Keep this exact list synchronized with deploy_release.py's
+          # REQUIRED_BUNDLE_FILES. New privileged inputs are never included
+          # merely because they appeared elsewhere in the checkout.
+          allowed_files=(
+            deploy/production/hostinger/prepare_vps_env.py
+            deploy/production/hostinger/read_env.py
+            deploy/production/hostinger/record_operation.py
+            deploy/production/hostinger/render_monitoring.py
+            deploy/production/hostinger/validate_caddy_coupling.py
+            deploy/production/hostinger/validate_config.py
+            deploy/production/hostinger/validate_host_hardening.py
+            deploy/production/hostinger/validate_replication.py
+            deploy/production/hostinger/validate_restore.py
+            deploy/production/hostinger/validate_topology.py
+            deploy/production/hostinger/backup.Dockerfile
+            deploy/production/hostinger/blackbox-exporter.Dockerfile
+            deploy/production/hostinger/blackbox.yml
+            deploy/production/hostinger/caddy.Dockerfile
+            deploy/production/hostinger/Caddyfile
+            deploy/production/hostinger/compose.yml
+            deploy/production/hostinger/node-exporter.Dockerfile
+            deploy/production/hostinger/operations.sh
+            deploy/production/hostinger/prometheus.template.yml
+            deploy/production/hostinger/storage.Dockerfile
+            deploy/production/hostinger/storage_healthcheck.go
+            deploy/production/private-studio/Caddyfile
+            deploy/production/private-studio/compose.yml
+            deploy/production/public_edge_smoke.py
+            ops/prometheus-alerts.yml
+          )
+          for path in "${allowed_files[@]}"; do
+            git cat-file -e "$GITHUB_SHA:$path"
+          done
+          source_marker="$RUNNER_TEMP/.aperture-source-sha"
+          archive_tar="$RUNNER_TEMP/$RELEASE_ID.source.tar"
+          printf '%s\n' "$GITHUB_SHA" > "$source_marker"
+          chmod 0600 "$source_marker"
+          git archive --format=tar --output "$archive_tar" "$GITHUB_SHA" -- \
+            "${allowed_files[@]}"
+          tar --append --file "$archive_tar" --directory "$RUNNER_TEMP" \
+            .aperture-source-sha
+          gzip -n < "$archive_tar" > "$payload/$RELEASE_ID.source.tar.gz"
+          install -m 0600 "$manifest" "$payload/$(basename "$manifest")"
+          (
+            cd "$payload"
+            sha256sum "$RELEASE_ID.release.json" "$RELEASE_ID.source.tar.gz" \
+              > "$RELEASE_ID.release.sha256"
+            chmod 0600 "$RELEASE_ID.release.sha256"
+            test "$(wc -l < "$RELEASE_ID.release.sha256")" -eq 2
+            sha256sum --strict --check "$RELEASE_ID.release.sha256"
+          )
+      - name: Upload release manifest, checksum, and source bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ steps.release.outputs.artifact_name }}
+          path: ${{ runner.temp }}/release-payload/*
+          if-no-files-found: error
+          retention-days: 30
+
+  deploy-production:
+    name: Deploy the tested candidate to Hostinger
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      vars.PRODUCTION_DEPLOY_ENABLED == 'true'
+    needs: [api, web, deployment-controls, publish-release]
+    runs-on: ubuntu-24.04
+    # A shared-operation lock wait plus the controller's bounded rollout and
+    # compensation path can approach 191 minutes. Leave recovery headroom so
+    # Actions cannot stop polling while the VPS restores the previous release.
+    timeout-minutes: 240
+    environment:
+      name: production
+      url: https://${{ vars.APERTURE_WEB_HOSTNAME }}
+    concurrency:
+      group: aperture-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Require explicit production enablement
+        shell: bash
+        env:
+          PRODUCTION_DEPLOY_ENABLED: ${{ vars.PRODUCTION_DEPLOY_ENABLED }}
+        run: |
+          set -euo pipefail
+          if [[ "$PRODUCTION_DEPLOY_ENABLED" != "true" ]]; then
+            echo "Production deployment is disabled; set PRODUCTION_DEPLOY_ENABLED=true only after launch gates pass." >&2
+            exit 1
+          fi
+      - name: Check out history for the migration guard
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Join the production tailnet with workload identity
+        uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4
+        with:
+          oauth-client-id: ${{ vars.APERTURE_TAILSCALE_OIDC_CLIENT_ID }}
+          audience: ${{ vars.APERTURE_TAILSCALE_OIDC_AUDIENCE }}
+          tags: tag:aperture-ci
+          ping: ${{ vars.APERTURE_TAILSCALE_HOST }}
+      - name: Prepare the pinned OpenSSH client
+        shell: bash
+        env:
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.APERTURE_DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ vars.APERTURE_DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.APERTURE_TAILSCALE_HOST }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$DEPLOY_HOST" =~ ^[a-z0-9][a-z0-9.-]{0,252}$ ]]
+          ssh_dir="$RUNNER_TEMP/aperture-ssh"
+          install -d -m 0700 "$ssh_dir"
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$ssh_dir/id_ed25519"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          chmod 0600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+          [[ "$(ssh-keygen -y -f "$ssh_dir/id_ed25519")" == ssh-ed25519\ * ]]
+          ssh-keygen -F "$DEPLOY_HOST" -f "$ssh_dir/known_hosts" \
+            | grep --quiet ' ssh-ed25519 '
+      - name: Read the active production source commit
+        id: active-production
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ vars.APERTURE_TAILSCALE_HOST }}
+          DEPLOY_USER: ${{ vars.APERTURE_DEPLOY_SSH_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_HOST" =~ ^[a-z0-9][a-z0-9.-]{0,252}$ ]]
+          [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]
+          ssh_dir="$RUNNER_TEMP/aperture-ssh"
+          ssh_options=(
+            -F /dev/null
+            -i "$ssh_dir/id_ed25519"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o "UserKnownHostsFile=$ssh_dir/known_hosts"
+            -o ConnectTimeout=15
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=3
+          )
+          source_deadline=$((SECONDS + 1800))
+          active_source_sha=
+          while ((SECONDS < source_deadline)); do
+            set +e
+            candidate_source_sha="$(
+              timeout 45s ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
+                'sudo -n /usr/local/sbin/aperture-deploy-release --report-current-source-sha'
+            )"
+            source_result=$?
+            set -e
+            if ((source_result == 0)) && \
+               [[ "$candidate_source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+              active_source_sha=$candidate_source_sha
+              break
+            fi
+            echo "The active-source query is temporarily blocked; retrying."
+            sleep 10
+          done
+          [[ "$active_source_sha" =~ ^[0-9a-f]{40}$ ]]
+          printf 'source_sha=%s\n' "$active_source_sha" >> "$GITHUB_OUTPUT"
+      - name: Require commit-scoped approval for database migrations
+        shell: bash
+        env:
+          DEPLOYED_SOURCE_SHA: ${{ steps.active-production.outputs.source_sha }}
+          APERTURE_APPROVED_MIGRATION_SHA: ${{ vars.APERTURE_APPROVED_MIGRATION_SHA }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD)" = "$GITHUB_SHA"
+          if [[ ! "$DEPLOYED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || \
+             ! git cat-file -e "$DEPLOYED_SOURCE_SHA^{commit}"; then
+            echo "The active production commit is unavailable; unattended migration detection fails closed." >&2
+            exit 1
+          fi
+          set +e
+          git diff --quiet "$DEPLOYED_SOURCE_SHA" "$GITHUB_SHA" -- apps/api/migrations/
+          migration_status=$?
+          set -e
+          case "$migration_status" in
+            0) echo "No database migration changes detected." ;;
+            1)
+              if [[ "$APERTURE_APPROVED_MIGRATION_SHA" != "$GITHUB_SHA" ]]; then
+                echo "Migration changes require APERTURE_APPROVED_MIGRATION_SHA to equal this exact commit." >&2
+                exit 1
+              fi
+              ;;
+            *) echo "Database migration detection failed." >&2; exit 1 ;;
+          esac
+      - name: Download the immutable release payload
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ${{ needs.publish-release.outputs.artifact-name }}
+          path: ${{ runner.temp }}/release-payload
+      - name: Verify the downloaded release payload
+        shell: bash
+        env:
+          RELEASE_ID: ${{ needs.publish-release.outputs.release-id }}
+          SOURCE_SHA: ${{ needs.publish-release.outputs.source-sha }}
+        run: |
+          set -euo pipefail
+          payload="$RUNNER_TEMP/release-payload"
+          bundle="$payload/$RELEASE_ID.source.tar.gz"
+          manifest="$payload/$RELEASE_ID.release.json"
+          checksum="$payload/$RELEASE_ID.release.sha256"
+          test "$SOURCE_SHA" = "$GITHUB_SHA"
+          test -s "$bundle"
+          test -s "$manifest"
+          test -s "$checksum"
+          test "$(find "$payload" -maxdepth 1 -type f | wc -l)" -eq 3
+          # actions/download-artifact intentionally normalizes file modes. Set
+          # the controller's exact sensitive-input contract explicitly before
+          # scp transfers these files to the dedicated account.
+          chmod 0600 "$bundle" "$manifest" "$checksum"
+          for path in "$bundle" "$manifest" "$checksum"; do
+            [[ "$(stat -c %a "$path")" == "600" ]]
+          done
+          mapfile -t checksum_lines < "$checksum"
+          ((${#checksum_lines[@]} == 2))
+          for index in 0 1; do
+            [[ "${checksum_lines[$index]:0:64}" =~ ^[0-9a-f]{64}$ ]]
+          done
+          [[ "${checksum_lines[0]:64}" == "  $RELEASE_ID.release.json" ]]
+          [[ "${checksum_lines[1]:64}" == "  $RELEASE_ID.source.tar.gz" ]]
+          (cd "$payload" && sha256sum --strict --check "$(basename "$checksum")")
+          RELEASE_MANIFEST="$manifest" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = json.loads(Path(os.environ["RELEASE_MANIFEST"]).read_text(encoding="utf-8"))
+          if manifest.get("release_id") != os.environ["RELEASE_ID"]:
+              raise SystemExit("release manifest ID does not match the workflow")
+          if manifest.get("source_commit") != os.environ["SOURCE_SHA"]:
+              raise SystemExit("release manifest source does not match the tested commit")
+          PY
+          BUNDLE_PATH="$bundle" python - <<'PY'
+          import os
+          import tarfile
+          from pathlib import PurePosixPath
+
+          expected = {
+              ".aperture-source-sha",
+              "deploy/production/hostinger/prepare_vps_env.py",
+              "deploy/production/hostinger/read_env.py",
+              "deploy/production/hostinger/record_operation.py",
+              "deploy/production/hostinger/render_monitoring.py",
+              "deploy/production/hostinger/validate_caddy_coupling.py",
+              "deploy/production/hostinger/validate_config.py",
+              "deploy/production/hostinger/validate_host_hardening.py",
+              "deploy/production/hostinger/validate_replication.py",
+              "deploy/production/hostinger/validate_restore.py",
+              "deploy/production/hostinger/validate_topology.py",
+              "deploy/production/hostinger/backup.Dockerfile",
+              "deploy/production/hostinger/blackbox-exporter.Dockerfile",
+              "deploy/production/hostinger/blackbox.yml",
+              "deploy/production/hostinger/caddy.Dockerfile",
+              "deploy/production/hostinger/Caddyfile",
+              "deploy/production/hostinger/compose.yml",
+              "deploy/production/hostinger/node-exporter.Dockerfile",
+              "deploy/production/hostinger/operations.sh",
+              "deploy/production/hostinger/prometheus.template.yml",
+              "deploy/production/hostinger/storage.Dockerfile",
+              "deploy/production/hostinger/storage_healthcheck.go",
+              "deploy/production/private-studio/Caddyfile",
+              "deploy/production/private-studio/compose.yml",
+              "deploy/production/public_edge_smoke.py",
+              "ops/prometheus-alerts.yml",
+          }
+          directories = set()
+          for name in expected:
+              parent = PurePosixPath(name).parent
+              while parent != PurePosixPath("."):
+                  directories.add(parent.as_posix())
+                  parent = parent.parent
+
+          found = set()
+          with tarfile.open(os.environ["BUNDLE_PATH"], mode="r:gz") as archive:
+              for member in archive.getmembers():
+                  name = member.name.rstrip("/")
+                  if member.isdir() and name in directories:
+                      continue
+                  if not member.isreg() or name not in expected or name in found:
+                      raise SystemExit("deployment bundle contains an unapproved archive member")
+                  found.add(name)
+              if found != expected:
+                  raise SystemExit("deployment bundle does not contain its exact file contract")
+              marker = archive.extractfile(".aperture-source-sha")
+              if marker is None or marker.read() != (os.environ["SOURCE_SHA"] + "\n").encode("ascii"):
+                  raise SystemExit("deployment bundle source marker is invalid")
+          PY
+      - name: Deploy through pinned OpenSSH over Tailscale
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ vars.APERTURE_TAILSCALE_HOST }}
+          DEPLOY_USER: ${{ vars.APERTURE_DEPLOY_SSH_USER }}
+          RELEASE_ID: ${{ needs.publish-release.outputs.release-id }}
+          SOURCE_SHA: ${{ needs.publish-release.outputs.source-sha }}
+          EXPECTED_CURRENT_SOURCE_SHA: ${{ steps.active-production.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$DEPLOY_HOST" =~ ^[a-z0-9][a-z0-9.-]{0,252}$ ]]
+          [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]
+          [[ "$RELEASE_ID" =~ ^[a-z0-9][a-z0-9._-]*$ ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$|^[0-9a-f]{64}$ ]]
+          [[ "$EXPECTED_CURRENT_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+          ssh_dir="$RUNNER_TEMP/aperture-ssh"
+          ssh_options=(
+            -F /dev/null
+            -i "$ssh_dir/id_ed25519"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o "UserKnownHostsFile=$ssh_dir/known_hosts"
+            -o ConnectTimeout=15
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=3
+          )
+          destination="$DEPLOY_USER@$DEPLOY_HOST"
+          incoming="incoming/$RELEASE_ID"
+          bundle_name="$RELEASE_ID.source.tar.gz"
+          manifest_name="$RELEASE_ID.release.json"
+          checksum_name="$RELEASE_ID.release.sha256"
+
+          timeout 90s ssh "${ssh_options[@]}" "$destination" \
+            "umask 077; install -d -m 0700 \"\$HOME/incoming\"; test ! -e \"\$HOME/$incoming\"; install -d -m 0700 \"\$HOME/$incoming\""
+          # Invoked through the EXIT trap below.
+          # shellcheck disable=SC2317
+          cleanup_remote() {
+            timeout 30s ssh "${ssh_options[@]}" "$destination" \
+              "rm -f -- \"\$HOME/$incoming/$bundle_name\" \"\$HOME/$incoming/$manifest_name\" \"\$HOME/$incoming/$checksum_name\"; rmdir -- \"\$HOME/$incoming\" 2>/dev/null || true" \
+              >/dev/null 2>&1 || true
+          }
+          trap cleanup_remote EXIT
+          timeout 120s scp "${ssh_options[@]}" \
+            "$RUNNER_TEMP/release-payload/$bundle_name" \
+            "$RUNNER_TEMP/release-payload/$manifest_name" \
+            "$RUNNER_TEMP/release-payload/$checksum_name" \
+            "$destination:$incoming/"
+          # SSH only submits the immutable root-owned job. The transient systemd
+          # service survives runner cancellation or a lost tailnet connection;
+          # these short SSH calls read its root-owned, schema-checked status.
+          deadline=$((SECONDS + 10500))
+          while ((SECONDS < deadline)); do
+            set +e
+            timeout 90s ssh "${ssh_options[@]}" "$destination" \
+              "sudo -n /usr/local/sbin/aperture-deploy-release --start --bundle \"\$HOME/$incoming/$bundle_name\" --manifest \"\$HOME/$incoming/$manifest_name\" --checksum \"\$HOME/$incoming/$checksum_name\" --expected-current-source-sha '$EXPECTED_CURRENT_SOURCE_SHA' --expected-source-sha '$SOURCE_SHA' --expected-release-id '$RELEASE_ID'" \
+              >/dev/null
+            reconcile_result=$?
+            if ((reconcile_result != 0)); then
+              set -e
+              echo "The VPS reconciliation path is temporarily unavailable; retrying."
+              sleep 15
+              continue
+            fi
+            status_json="$(
+              timeout 45s ssh "${ssh_options[@]}" "$destination" \
+                "sudo -n /usr/local/sbin/aperture-deploy-release --status --expected-release-id '$RELEASE_ID'"
+            )"
+            status_result=$?
+            set -e
+            if ((status_result != 0)); then
+              echo "The VPS status path is temporarily unavailable; the host-owned recovery service remains authoritative."
+              sleep 15
+              continue
+            fi
+            state="$(DEPLOY_STATUS="$status_json" python - <<'PY'
+          import json
+          import os
+
+          value = json.loads(os.environ["DEPLOY_STATUS"])
+          expected = {
+              "schema_version", "event", "release_id", "source_commit", "state",
+              "stage", "recovery_status", "updated_at",
+          }
+          if set(value) != expected:
+              raise SystemExit("unexpected deployment status schema")
+          if value["release_id"] != os.environ["RELEASE_ID"]:
+              raise SystemExit("deployment status release mismatch")
+          if value["source_commit"] != os.environ["SOURCE_SHA"]:
+              raise SystemExit("deployment status source mismatch")
+          if value["state"] not in {"queued", "running", "pass", "fail"}:
+              raise SystemExit("unexpected deployment status state")
+          print(value["state"])
+          PY
+            )"
+            case "$state" in
+              pass)
+                echo "The systemd-owned production deployment passed."
+                exit 0
+                ;;
+              fail)
+                echo "The systemd-owned production deployment failed: $status_json" >&2
+                exit 1
+                ;;
+              queued|running) sleep 15 ;;
+              *) echo "Invalid deployment status." >&2; exit 1 ;;
+            esac
+          done
+          echo "Timed out polling the VPS deployment; the systemd service remains authoritative and may still be recovering." >&2
+          exit 1

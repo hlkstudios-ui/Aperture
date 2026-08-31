@@ -1,9 +1,12 @@
+from functools import lru_cache
+
 import boto3
 from botocore.config import Config
 
 from app.config import get_settings
 
 
+@lru_cache(maxsize=2)
 def s3_client(*, public: bool = False):
     settings = get_settings()
     return boto3.client(
@@ -16,7 +19,14 @@ def s3_client(*, public: bool = False):
         region_name=settings.s3_region,
         aws_access_key_id=settings.s3_access_key,
         aws_secret_access_key=settings.s3_secret_key,
-        config=Config(s3={"addressing_style": "path"}, signature_version="s3v4"),
+        config=Config(
+            s3={"addressing_style": "path"},
+            signature_version="s3v4",
+            connect_timeout=1,
+            read_timeout=2,
+            retries={"max_attempts": 1, "mode": "standard"},
+            max_pool_connections=20,
+        ),
     )
 
 

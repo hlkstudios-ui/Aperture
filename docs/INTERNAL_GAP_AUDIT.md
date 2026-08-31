@@ -16,19 +16,29 @@ an owner-input list and it must not be used to turn local evidence into launch a
 | Command A §60 concurrent stream limits | Atomic per-account Redis admission keyed by device session, entitlement-derived cap, bounded expiry/refresh, API-proxy and CDN-origin lease checks, fail-closed outage behavior, actionable watch UI | **PROVED LOCALLY** — admission/refresh/expiry/invalid-entitlement checks, 77 API and 14 web regressions, and a live two-device desktop/mobile denial journey pass | Provider Valkey failure drill and real multi-device CDN cache/grant acceptance remain deployment evidence |
 | Command A §60–61 geo/territory rights | `country_code` remains production origin; explicit allowlists cover title/edition; signed assertions propagate through every title-bearing customer surface; playback/media/CDN grants and caches bind country; trusted public ingress replaces client values with provider-derived signatures | **PROVED LOCALLY** — all Studio controls, cross-service predicates, unknown/allowed catalog and club behavior, assertion tamper/age tests, server forwarding, lease retention, media recheck, CDN region-tamper rejection, and geo-ingress spoof/unknown tests pass | Deploy the real geo edge, bind the direct Hostinger origin/DNS/secrets, and capture multi-country public allowed/denied evidence |
 
-The Hostinger migration added and locally proved digest-only releases/rollback, host hardening,
-off-site backup/media-copy procedures, private Studio origin enforcement, private monitoring,
-blackbox/TLS/origin-denial checks, and fail-closed configuration validation. The complete
-external artifact mapping now lives in `docs/HOSTINGER_EVIDENCE_MAP.md`.
+The Hostinger migration added and locally proved eight-artifact digest-only releases/rollback,
+host hardening, off-site backup/media-copy procedures, private Studio origin enforcement,
+private monitoring, blackbox/TLS/origin-denial checks, and fail-closed configuration validation.
+Caddy, storage, Node Exporter, and Blackbox Exporter are now first-party nonroot artifacts built
+from exact reviewed sources; all four local candidates scan with 0 critical/0 high findings. The
+complete external artifact mapping now lives in `docs/HOSTINGER_EVIDENCE_MAP.md`.
 
 The final adapted-Caddy audit found and closed an ingress-ordering defect before production
 handoff. Hostinger application routes now use an order-preserving policy: origin admission is
 evaluated first, private Studio/admin admission second, and application proxies last. The real
-Caddy 2.10.2 JSON adaptation is machine-checked for this order as well as both independent
+Caddy 2.11.4 JSON adaptation is machine-checked for this order as well as both independent
 secrets; a regression test rejects the former proxy-before-denial shape.
 
+The same ordered edge policy now mitigates the outstanding MinIO application advisories by
+denying unsigned-payload trailers, Snowball auto-extraction, S3 Select, replication
+server-side-encryption metadata, and the internal storage REST namespace before the MinIO proxy.
+Policy tests and a real hardened edge/storage integration prove the denial responses while signed
+S3 create/version/put/get behavior remains available. This is defense in depth around the final
+Community release, not evidence that the vulnerable upstream feature paths were repaired.
+
 No known repository-owned implementation or browser-evidence gap remains after this focused
-audit. This determination is limited to current source, tests, actual Caddy/Prometheus/Blackbox
-configuration validation, and the restored HTTPS staging topology. It does not close or reduce
+audit. This determination is limited to current source, tests, actual Caddy 2.11.4, Prometheus
+3.14.0-distroless, and Blackbox Exporter 0.28.0 configuration validation, and the restored HTTPS
+staging topology. It does not close or reduce
 the six owner/provider/content/legal blockers in the launch checklist, and any failed production
 rehearsal reopens the corresponding implementation audit.

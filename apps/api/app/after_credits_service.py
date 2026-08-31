@@ -10,6 +10,7 @@ from app.after_credits_schemas import (
     AfterCreditsResponse,
 )
 from app.catalog_models import Credit, Episode, Movie, Person, Season, Series
+from app.catalog_visibility import public_title_conditions
 from app.models import PlaybackSource, ViewingActivity
 from app.scene_models import (
     IntelligenceVersionState,
@@ -18,7 +19,6 @@ from app.scene_models import (
     SceneIntelligenceVersion,
     SceneSource,
 )
-from app.scheduling import availability_clause
 
 MODULE_KINDS = {
     "ending_analysis": "Ending analysis",
@@ -115,7 +115,7 @@ def after_credits_room(
                 .where(
                     Movie.franchise_id == movie.franchise_id,
                     Movie.id != movie.id,
-                    availability_clause(Movie, country=country),
+                    *public_title_conditions(Movie, country=country),
                 )
                 .order_by(Movie.release_date.asc().nullslast())
                 .limit(4)

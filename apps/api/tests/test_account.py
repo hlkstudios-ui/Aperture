@@ -60,10 +60,13 @@ def test_account_subscription_entitlements_and_owned_session_revocation() -> Non
         assert account.json()["entitlements"][0]["value"] == {"limit": 4}
         assert len(account.json()["sessions"]) == 2
         assert account.json()["billing"] == {
-            "provider": "development_stub",
+            "provider": "disabled",
             "production_ready": False,
             "checkout_available": False,
-            "notice": "Billing is not configured and never simulates completed payment.",
+            "notice": (
+                "Payments are intentionally disabled for this launch. "
+                "No payment can be accepted."
+            ),
         }
         checkout = first.post("/account/checkout", json={"plan_code": "essential-monthly"})
         assert checkout.status_code == 409

@@ -6,7 +6,7 @@ import { studioEdgeHeaders } from "@/app/lib/studio-edge";
 const apiOrigin = process.env.API_ORIGIN ?? "http://localhost:8000";
 
 export class CatalogActionError extends Error {
-  constructor(public detail: string) {
+  constructor(public detail: string, public code?: string) {
     super(detail);
   }
 }
@@ -34,12 +34,14 @@ export async function adminCatalogFetch<T>(
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
       detail?: string | Array<{ msg: string }>;
+      code?: unknown;
     } | null;
     const detail = Array.isArray(body?.detail)
       ? body.detail.map((item) => item.msg).join(". ")
       : body?.detail;
     throw new CatalogActionError(
       detail ?? `Catalog request failed (${response.status})`,
+      typeof body?.code === "string" ? body.code : undefined,
     );
   }
   if (response.status === 204) return undefined as T;

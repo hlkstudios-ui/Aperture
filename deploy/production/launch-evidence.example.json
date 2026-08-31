@@ -1,18 +1,22 @@
 {
-  "record_version": 1,
+  "record_version": 2,
   "environment": "dummy",
   "decision": "pending_human_approval",
   "release": {
     "id": "DUMMY_RELEASE_ID",
     "infrastructure_version": "DUMMY_INFRASTRUCTURE_VERSION",
     "deployed_at": "2026-08-16T00:00:00Z",
-    "migration_head": "b7e4c91d2a60",
+    "migration_head": "20260830_0032",
     "image_digests": {
       "web": "DUMMY_WEB_IMAGE_DIGEST",
       "api": "DUMMY_API_IMAGE_DIGEST",
       "media_worker": "DUMMY_MEDIA_WORKER_IMAGE_DIGEST",
-      "scene_worker": "DUMMY_SCENE_WORKER_IMAGE_DIGEST",
-      "backup": "DUMMY_BACKUP_IMAGE_DIGEST"
+      "scene_worker": "DUMMY_API_IMAGE_DIGEST",
+      "backup": "DUMMY_BACKUP_IMAGE_DIGEST",
+      "caddy": "DUMMY_CADDY_IMAGE_DIGEST",
+      "storage": "DUMMY_STORAGE_IMAGE_DIGEST",
+      "node_exporter": "DUMMY_NODE_EXPORTER_IMAGE_DIGEST",
+      "blackbox": "DUMMY_BLACKBOX_IMAGE_DIGEST"
     }
   },
   "gates": {

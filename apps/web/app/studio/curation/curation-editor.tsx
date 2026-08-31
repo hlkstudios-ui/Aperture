@@ -20,7 +20,7 @@ function OrderedMovies({ movies, ids, onChange }: { movies: MovieOption[]; ids: 
     if (target < 0 || target >= ids.length) return;
     const next = [...ids]; [next[index], next[target]] = [next[target], next[index]]; onChange(next);
   };
-  return <div className="ordered-editor"><div className="ordered-add"><select defaultValue="" onChange={(event) => { if (event.target.value) onChange([...ids, event.target.value]); event.target.value = ""; }}><option value="">Add a movie…</option>{unused.map((movie) => <option key={movie.id} value={movie.id}>{movie.title}</option>)}</select></div>
+  return <div className="ordered-editor"><div className="ordered-add"><select aria-label="Add a movie" defaultValue="" onChange={(event) => { if (event.target.value) onChange([...ids, event.target.value]); event.target.value = ""; }}><option value="">Add a movie…</option>{unused.map((movie) => <option key={movie.id} value={movie.id}>{movie.title}</option>)}</select></div>
     <ol>{ids.map((id, index) => <li key={id}><span>{movies.find((movie) => movie.id === id)?.title ?? "Unavailable title"}</span><div><button type="button" aria-label="Move up" onClick={() => move(index, -1)}>↑</button><button type="button" aria-label="Move down" onClick={() => move(index, 1)}>↓</button><button type="button" onClick={() => onChange(ids.filter((value) => value !== id))}>Remove</button></div></li>)}</ol></div>;
 }
 

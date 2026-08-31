@@ -2,8 +2,8 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiGatewayPath } from "@/app/lib/api-gateway";
 
-const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8000";
 type Review = { id:string; profile_id:string; profile_name:string|null; headline:string|null; body:string; contains_spoilers:boolean; status:string };
 export type Community = { rating_count:number; average_rating:number|null; viewer_rating:number|null; reviews:Review[]; moderation_required:boolean };
 
@@ -13,13 +13,13 @@ export function CommunityPanel({ movieId, authenticated, initialCommunity }: { m
   const [notice, setNotice] = useState("");
   const load = async () => {
     if (!authenticated) return;
-    const response = await fetch(`${apiOrigin}/community/movies/${movieId}`, { credentials:"include" });
+    const response = await fetch(apiGatewayPath(`/community/movies/${movieId}`), { credentials:"include" });
     if (response.ok) setCommunity(await response.json() as Community);
   };
   const requireSignIn = () => { if (!authenticated) router.push("/login?next=community"); return authenticated; };
   const rate = async (score:number) => {
     if (!requireSignIn()) return;
-    const response = await fetch(`${apiOrigin}/community/movies/${movieId}/rating`, { method:"PUT", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify({score}) });
+    const response = await fetch(apiGatewayPath(`/community/movies/${movieId}/rating`), { method:"PUT", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify({score}) });
     setNotice(response.ok ? "Rating saved privately to this profile." : "Rating could not be saved.");
     if (response.ok) await load();
   };
@@ -27,16 +27,16 @@ export function CommunityPanel({ movieId, authenticated, initialCommunity }: { m
     event.preventDefault(); if (!requireSignIn()) return;
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
-    const response = await fetch(`${apiOrigin}/community/movies/${movieId}/review`, { method:"PUT", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ headline:String(form.get("headline")??"" )||null, body:String(form.get("body")??""), contains_spoilers:form.get("spoilers")==="on" }) });
+    const response = await fetch(apiGatewayPath(`/community/movies/${movieId}/review`), { method:"PUT", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ headline:String(form.get("headline")??"" )||null, body:String(form.get("body")??""), contains_spoilers:form.get("spoilers")==="on" }) });
     setNotice(response.ok ? "Review submitted for moderation. It is not public yet." : "Review could not be submitted.");
     if (response.ok) formElement.reset();
   };
   const protect = async (review:Review, action:"report"|"follow"|"mute"|"block") => {
     if (!requireSignIn()) return;
     const response = action === "report"
-      ? await fetch(`${apiOrigin}/community/reports`, { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify({review_id:review.id,reason:"other",details:"Reported from the movie community panel."}) })
-      : action === "follow" ? await fetch(`${apiOrigin}/community/follows/${review.profile_id}`, {method:"PUT",credentials:"include"})
-      : await fetch(`${apiOrigin}/community/safety/${review.profile_id}/${action}`, { method:"PUT", credentials:"include" });
+      ? await fetch(apiGatewayPath("/community/reports"), { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify({review_id:review.id,reason:"other",details:"Reported from the movie community panel."}) })
+      : action === "follow" ? await fetch(apiGatewayPath(`/community/follows/${review.profile_id}`), {method:"PUT",credentials:"include"})
+      : await fetch(apiGatewayPath(`/community/safety/${review.profile_id}/${action}`), { method:"PUT", credentials:"include" });
     setNotice(response.ok ? (action === "report" ? "Report sent to moderation." : action === "follow" ? "Following this profile." : `${action === "mute" ? "Muted" : "Blocked"} this profile.`) : "Safety action could not be completed.");
     if (response.ok && (action === "mute" || action === "block")) await load();
   };

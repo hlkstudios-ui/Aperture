@@ -35,7 +35,7 @@ def test_private_club_and_entitlement_safe_party_synchronization() -> None:
         )
         movie = Movie(
             title=f"Club Film {token}",
-            slug=f"club-film-{token}",
+            slug=f"screening-film-{token}",
             short_description="Club fixture.",
             synopsis="Club fixture.",
             runtime_minutes=90,
@@ -70,7 +70,7 @@ def test_private_club_and_entitlement_safe_party_synchronization() -> None:
         )
         db.add(job)
         db.flush()
-        source = PlaybackSource(processing_job_id=job.id, movie_id=movie.id)
+        source = PlaybackSource(processing_job_id=job.id, movie_id=movie.id, is_active=True)
         db.add(source)
         db.commit()
         admin_id, movie_id, source_id, asset_id = admin.id, movie.id, source.id, asset.id

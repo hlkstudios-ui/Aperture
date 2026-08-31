@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-08-29 — Hostinger first-party edge, storage, and exporter artifacts
+
+- Replaced the mutable upstream Caddy, MinIO server, Node Exporter, and Blackbox Exporter
+  selections in production Compose with immutable `CADDY_IMAGE`, `STORAGE_IMAGE`,
+  `NODE_EXPORTER_IMAGE`, and `BLACKBOX_IMAGE` release inputs built from reviewed first-party
+  Dockerfiles.
+- Extended the approved-builder workflow, strict digest validation, sanitized VPS allowlist,
+  topology mappings, atomic pinning, rollback controller, examples, and version 2 launch-evidence
+  record to cover API, media-worker, web, backup, Caddy, storage, node-exporter, and Blackbox as
+  eight distinct artifacts. Scene keeps the API digest, producing nine explicit runtime component
+  bindings.
+- Preserved the disabled-payment and policy gates, literal dotenv parsing, mode-preserving atomic
+  writes, and secret-redacted rollback output. No registry push or production deployment is
+  claimed; local Node Exporter and Blackbox candidates each scan at 0 critical/0 high.
+
+## 2026-08-29 — Hostinger media-worker image isolation
+
+- Removed FFmpeg from the Python 3.12.14/Alpine 3.24 API image and introduced a dedicated,
+  upgraded-Alpine media-worker Dockerfile containing FFmpeg. API, migration, Scene worker,
+  maintenance, and preflight stay on the smaller API artifact.
+- Threaded a distinct immutable `MEDIA_WORKER_IMAGE` through Hostinger Compose, credential
+  validation, sanitized VPS rendering, approved-builder digest pinning, eight-artifact rollback,
+  topology validation, evidence documentation, and focused tests without weakening policy,
+  payment, or atomic-secret gates.
+- Kept the nine-component launch-evidence contract: `media_worker` receives the dedicated digest,
+  `scene_worker` records the shared API digest, and edge/storage/exporters record their artifacts.
+  Runtime binary and vulnerability rescans remain required release evidence; no image push is
+  claimed here.
+
 ## 2026-08-18 — Single credential entry point
 
 - Made the repository-root mode-0600 `.env` the only owner-edited credential file for the

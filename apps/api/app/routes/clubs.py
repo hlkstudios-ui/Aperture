@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.auth import DbSession, require_customer_session, require_trusted_origin
 from app.catalog_models import Movie
+from app.catalog_visibility import public_title_conditions
 from app.club_models import (
     ClubCollection,
     ClubDiscussionPost,
@@ -57,7 +58,6 @@ from app.rate_limit import enforce_rate_limit
 from app.routes.community import hidden_profile_ids
 from app.routes.playback import config_for, playable_source
 from app.routes.recommendations import active_profile
-from app.scheduling import availability_clause
 
 router = APIRouter(
     prefix="/clubs",
@@ -121,10 +121,11 @@ def club_response(
         .join(Movie, ClubScheduledWatch.movie_id == Movie.id)
         .where(
             ClubScheduledWatch.club_id == club.id,
-            availability_clause(Movie, country=country),
+            *public_title_conditions(Movie, country=country),
         )
         .order_by(ClubScheduledWatch.scheduled_at.desc())
     ).all()
+    visible_watch_ids = {watch.id for watch in watches}
     polls = []
     for poll in db.scalars(
         select(ClubPoll)
@@ -175,11 +176,9 @@ def club_response(
     for link in db.scalars(select(ClubCollection).where(ClubCollection.club_id == club.id)):
         collection = db.get(Collection, link.collection_id)
         if collection:
-            lists.append(
-                collection_response(db, load_collection(db, collection.id), country).model_dump(
-                    mode="json"
-                )
-            )
+            response = collection_response(db, load_collection(db, collection.id), country)
+            if response.items:
+                lists.append(response.model_dump(mode="json"))
     history = [
         {
             "scheduled_watch_id": str(item.scheduled_watch_id),
@@ -190,7 +189,10 @@ def club_response(
         for item in db.scalars(
             select(ClubWatchHistory)
             .join(ClubScheduledWatch)
-            .where(ClubScheduledWatch.club_id == club.id)
+            .where(
+                ClubScheduledWatch.club_id == club.id,
+                ClubWatchHistory.scheduled_watch_id.in_(visible_watch_ids),
+            )
             .order_by(ClubWatchHistory.joined_at.desc())
         )
     ]
@@ -358,7 +360,7 @@ async def schedule_watch(
     movie = db.scalar(
         select(Movie).where(
             Movie.id == payload.movie_id,
-            availability_clause(Movie, country=country),
+            *public_title_conditions(Movie, country=country),
         )
     )
     source_id = payload.playback_source_id or db.scalar(

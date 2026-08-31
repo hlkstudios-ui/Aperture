@@ -1,11 +1,11 @@
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, func, select
 
 from app.auth import hash_password
-from app.catalog_models import CatalogStatus, Movie, Series
+from app.catalog_models import CatalogStatus, Genre, Movie, Season, Series
 from app.config import get_settings
 from app.db import SessionLocal
 from app.geo import sign_geo_assertion
@@ -58,17 +58,21 @@ def test_homepage_draft_publish_scheduling_and_rights_windows() -> None:
     now = datetime.now(UTC)
     with SessionLocal() as db:
         admin = Admin(email=email, password_hash=hash_password(password))
+        genre = Genre(name=f"Science Fiction {token}", slug=f"science-fiction-{token}")
         scheduled = Movie(
             title=f"Scheduled Feature {token}",
             slug=f"scheduled-feature-{token}",
             short_description="A title published by a UTC schedule.",
             synopsis="Homepage scheduling integration fixture.",
+            release_date=date(2024, 10, 4),
             runtime_minutes=90,
+            maturity_rating="PG-13",
             status=CatalogStatus.ready,
             publish_at=now - timedelta(minutes=1),
             rights_start_at=now - timedelta(days=1),
             rights_end_at=now + timedelta(days=1),
             allowed_territories=["CA"],
+            genres=[genre],
         )
         unavailable = Series(
             title=f"Future Rights {token}",
@@ -78,9 +82,27 @@ def test_homepage_draft_publish_scheduling_and_rights_windows() -> None:
             status=CatalogStatus.published,
             rights_start_at=now + timedelta(days=1),
         )
-        db.add_all([admin, scheduled, unavailable])
+        available_series = Series(
+            title=f"Available Series {token}",
+            slug=f"available-series-{token}",
+            short_description="A series with card metadata.",
+            synopsis="Homepage series metadata integration fixture.",
+            release_date=date(2023, 6, 12),
+            maturity_rating="TV-14",
+            status=CatalogStatus.published,
+            rights_start_at=now - timedelta(days=1),
+            rights_end_at=now + timedelta(days=1),
+            allowed_territories=["CA"],
+            genres=[genre],
+            seasons=[Season(number=1, title="Season One"), Season(number=2, title="Season Two")],
+        )
+        db.add_all([admin, scheduled, unavailable, available_series])
         db.commit()
-        admin_id, movie_id, series_id = admin.id, scheduled.id, unavailable.id
+        admin_id = admin.id
+        movie_id = scheduled.id
+        unavailable_series_id = unavailable.id
+        available_series_id = available_series.id
+        genre_id = genre.id
 
     with TestClient(app) as client:
         issued_at = int(datetime.now(UTC).timestamp())
@@ -143,18 +165,53 @@ def test_homepage_draft_publish_scheduling_and_rights_windows() -> None:
             json={"movie_id": str(movie_id), "position": 0},
         )
         assert item.status_code == 201, item.text
+        series_item = client.post(
+            f"/admin/homepage/rails/{rail_id}/items",
+            json={"series_id": str(available_series_id), "position": 1},
+        )
+        assert series_item.status_code == 201, series_item.text
         preview = client.get("/admin/homepage/preview")
         assert preview.status_code == 200
-        assert preview.json()["hero"]["title"] == f"Scheduled Feature {token}"
+        preview_payload = preview.json()
+        preview_hero = preview_payload["hero"]
+        assert preview_hero["title"] == f"Scheduled Feature {token}"
+        assert preview_hero["release_date"] == "2024-10-04"
+        assert preview_hero["runtime_minutes"] == 90
+        assert preview_hero["maturity_rating"] == "PG-13"
+        assert preview_hero["season_count"] is None
+        assert preview_hero["genres"] == [
+            {
+                "id": str(genre_id),
+                "name": f"Science Fiction {token}",
+                "slug": f"science-fiction-{token}",
+            }
+        ]
+        preview_series = next(
+            title
+            for title in preview_payload["rails"][-1]["items"]
+            if title["id"] == str(available_series_id)
+        )
+        assert preview_series["release_date"] == "2023-06-12"
+        assert preview_series["runtime_minutes"] is None
+        assert preview_series["maturity_rating"] == "TV-14"
+        assert preview_series["season_count"] == 2
+        assert preview_series["genres"] == preview_hero["genres"]
         live_before = client.get("/homepage").json()
         assert all(rail["id"] != rail_id for rail in live_before["rails"])
         published = client.post("/admin/homepage/publish")
         assert published.status_code == 200, published.text
         assert any(rail["id"] == rail_id for rail in published.json()["rails"])
         assert client.get("/homepage").json()["hero"] is None
-        assert client.get("/homepage", headers=geo_headers).json()["hero"]["id"] == str(
-            movie_id
+        live = client.get("/homepage", headers=geo_headers).json()
+        assert live["hero"]["id"] == str(movie_id)
+        live_series = next(
+            title
+            for rail in live["rails"]
+            for title in rail["items"]
+            if title["id"] == str(available_series_id)
         )
+        assert live_series["season_count"] == 2
+        assert live_series["genres"] == preview_hero["genres"]
 
     with SessionLocal() as db:
         config = db.scalar(select(HomepageConfiguration))
@@ -164,7 +221,10 @@ def test_homepage_draft_publish_scheduling_and_rights_windows() -> None:
         config.published_at = old_published_at
         db.execute(delete(HomepageRail).where(HomepageRail.id == uuid.UUID(rail_id)))
         db.execute(delete(Movie).where(Movie.id == movie_id))
-        db.execute(delete(Series).where(Series.id == series_id))
+        db.execute(
+            delete(Series).where(Series.id.in_([unavailable_series_id, available_series_id]))
+        )
+        db.execute(delete(Genre).where(Genre.id == genre_id))
         db.execute(delete(AuditLog).where(AuditLog.actor_id == admin_id))
         db.execute(delete(Admin).where(Admin.id == admin_id))
         db.commit()

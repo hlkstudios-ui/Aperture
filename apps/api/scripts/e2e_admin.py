@@ -3,18 +3,17 @@
 import json
 import sys
 
+from e2e_guard import require_e2e_test_environment
 from sqlalchemy import delete, select
 
 from app.auth import hash_password
 from app.community_models import ModerationAction
-from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Admin, AuditLog
 
 
 def main() -> None:
-    if get_settings().app_env not in {"development", "test"}:
-        raise SystemExit("E2E administrator helpers are disabled outside development/test")
+    require_e2e_test_environment()
     payload = json.load(sys.stdin)
     email = payload["email"].lower()
     if not email.endswith("@example.com"):

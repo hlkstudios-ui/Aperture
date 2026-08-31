@@ -82,7 +82,7 @@ export default async function ContentLibrary({
         <button type="submit">Apply filters</button>
       </form>
       <div className="content-table-wrap">
-        <table className="content-table">
+        <table className="content-table content-library-table">
           <thead>
             <tr>
               <th>Title</th>

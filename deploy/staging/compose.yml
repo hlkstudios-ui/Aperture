@@ -20,7 +20,7 @@ x-api-environment: &api-environment
   SMTP_PASSWORD: ${SMTP_PASSWORD}
   SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
   SMTP_STARTTLS: "false"
-  BILLING_PROVIDER: staging_unconfigured
+  BILLING_PROVIDER: disabled
   ERROR_TRACKING_DSN: ${ERROR_TRACKING_DSN:-}
   METRICS_BEARER_TOKEN: ${METRICS_BEARER_TOKEN}
   QUEUE_BACKLOG_ALERT_THRESHOLD: 25
@@ -86,7 +86,10 @@ services:
     networks: [private]
 
   minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: aperture-storage:community-2025-10-15-hardened
+    build:
+      context: ../..
+      dockerfile: deploy/production/hostinger/storage.Dockerfile
     restart: unless-stopped
     command: server /data --console-address :9001
     environment:
@@ -147,6 +150,10 @@ services:
 
   media-worker:
     <<: *api-service
+    image: aperture-media-worker:staging
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile.media-worker
     command: [python, -m, app.media_worker]
 
   scene-worker:
@@ -160,9 +167,8 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         API_ORIGIN: http://api:8000
-        NEXT_PUBLIC_API_ORIGIN: ${STAGING_API_ORIGIN}
         NEXT_PUBLIC_OBJECT_STORAGE_ORIGIN: ${STAGING_STORAGE_ORIGIN}
-        NEXT_PUBLIC_MEDIA_ORIGIN: ${STAGING_API_ORIGIN}
+        MEDIA_SOURCE_ORIGINS: ${MEDIA_SOURCE_ORIGINS:-}
         NEXT_PUBLIC_FEATURE_SCENE_LENS_ENABLED: ${FEATURE_SCENE_LENS_ENABLED:-true}
         NEXT_PUBLIC_FEATURE_ASK_MOVIE_ENABLED: ${FEATURE_ASK_MOVIE_ENABLED:-true}
         NEXT_PUBLIC_FEATURE_COMMUNITY_ENABLED: ${FEATURE_COMMUNITY_ENABLED:-true}
@@ -173,9 +179,8 @@ services:
     restart: unless-stopped
     environment:
       API_ORIGIN: http://api:8000
-      NEXT_PUBLIC_API_ORIGIN: ${STAGING_API_ORIGIN}
       NEXT_PUBLIC_OBJECT_STORAGE_ORIGIN: ${STAGING_STORAGE_ORIGIN}
-      NEXT_PUBLIC_MEDIA_ORIGIN: ${STAGING_API_ORIGIN}
+      MEDIA_SOURCE_ORIGINS: ${MEDIA_SOURCE_ORIGINS:-}
       NEXT_PUBLIC_FEATURE_SCENE_LENS_ENABLED: ${FEATURE_SCENE_LENS_ENABLED:-true}
       NEXT_PUBLIC_FEATURE_ASK_MOVIE_ENABLED: ${FEATURE_ASK_MOVIE_ENABLED:-true}
       NEXT_PUBLIC_FEATURE_COMMUNITY_ENABLED: ${FEATURE_COMMUNITY_ENABLED:-true}
@@ -188,7 +193,7 @@ services:
     networks: [private]
 
   caddy:
-    image: caddy:2.10.2-alpine
+    image: caddy:2.11.4-alpine
     restart: unless-stopped
     ports: ["${STAGING_HTTPS_PORT:-8443}:443"]
     environment:

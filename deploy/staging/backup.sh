@@ -3,15 +3,17 @@ set -euo pipefail
 
 staging_dir=$(cd "$(dirname "$0")" && pwd)
 root_dir=$(cd "$staging_dir/../.." && pwd)
-env_file="$staging_dir/.env.staging"
+env_file="$root_dir/.env"
+env_reader="$root_dir/deploy/production/hostinger/read_env.py"
 destination=${1:-}
-[[ -f "$env_file" ]] || { echo "Missing isolated staging environment." >&2; exit 1; }
+[[ -f "$env_file" ]] || { echo "Missing root .env; run deploy/staging/generate-env.sh first." >&2; exit 1; }
+[[ -f "$env_reader" ]] || { echo "Missing the literal dotenv reader." >&2; exit 1; }
 [[ -n "$destination" && "$destination" = /* ]] || { echo "Pass an absolute backup destination." >&2; exit 1; }
 case "$destination" in /|"$HOME"|"$root_dir") echo "Refusing a broad backup destination." >&2; exit 1;; esac
 
-set -a
-source "$env_file"
-set +a
+value() { python3 "$env_reader" --input "$env_file" --label "$1"; }
+POSTGRES_USER=$(value POSTGRES_USER)
+POSTGRES_DB=$(value POSTGRES_DB)
 mkdir -p "$destination"
 if docker compose version >/dev/null 2>&1; then
   compose=(docker compose --env-file "$env_file" -f "$staging_dir/compose.yml")
@@ -27,7 +29,7 @@ config="$destination/config-$stamp.tar.gz"
   --format=custom --no-owner --no-privileges >"$dump"
 tar -czf "$config" -C "$root_dir" \
   deploy/staging/compose.yml deploy/staging/Caddyfile \
-  deploy/staging/.env.staging.example deploy/staging/generate-env.sh \
+  .env.example deploy/staging/generate-env.sh \
   deploy/staging/verify.sh deploy/staging/README.md
 shasum -a 256 "$dump" "$config" >"$destination/SHA256SUMS-$stamp"
 echo "Created database and non-secret configuration backups in $destination"

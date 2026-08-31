@@ -151,6 +151,8 @@ def smtp_check(settings: Settings) -> Check:
 
 
 def billing_check(settings: Settings) -> Check:
+    if settings.billing_provider == "disabled":
+        return passed("billing", "payments_intentionally_disabled")
     if settings.billing_provider != "stripe" or not settings.stripe_secret_key:
         return failed("billing", "supported_provider_not_configured")
     try:

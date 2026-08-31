@@ -6,6 +6,7 @@ from sqlalchemy import extract, or_, select
 
 from app.catalog_models import Credit, Episode, Movie, Person, Season, Series
 from app.catalog_service import movie_query, series_query
+from app.catalog_visibility import exclude_legacy_test_fixtures
 from app.models import PlaybackSource, Profile, ViewingActivity
 from app.passport_schemas import (
     PassportCreator,
@@ -67,11 +68,21 @@ def _activity_titles(db, profile_id, year: int | None) -> tuple[list[ActivityTit
     series_ids = {season.series_id for _, _, episode, season in rows if episode and season}
     movies = {
         movie.id: movie
-        for movie in db.scalars(movie_query().where(Movie.id.in_(movie_ids))).unique()
+        for movie in db.scalars(
+            movie_query().where(
+                Movie.id.in_(movie_ids),
+                *exclude_legacy_test_fixtures(Movie),
+            )
+        ).unique()
     }
     series = {
         series.id: series
-        for series in db.scalars(series_query().where(Series.id.in_(series_ids))).unique()
+        for series in db.scalars(
+            series_query().where(
+                Series.id.in_(series_ids),
+                *exclude_legacy_test_fixtures(Series),
+            )
+        ).unique()
     }
     result: list[ActivityTitle] = []
     for activity, source, episode, season in rows:

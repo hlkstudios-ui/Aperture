@@ -11,14 +11,22 @@ Production Studio is deliberately absent from the public edge. Deploy the separa
 
 ## Dummy configuration now
 
-`credentials.local.env` contains harmless dummy inputs and is git-ignored. It is the only
-file intended for your eventual values. `credentials.example.env` is the permanent,
-fully labeled reference and must remain free of real credentials.
+The repository-root `.env` is the only owner-edited credential file. Add the labeled
+DigitalOcean inputs there when needed. `credentials.example.env` is the permanent,
+non-secret validation fixture and reference; it must remain free of real credentials.
+
+Configure both values for every OAuth provider you enable and register the storefront
+`/api/gateway/auth/oauth/{provider}/callback` URLs. With `CAPTCHA_REQUIRED=true`, the renderer
+requires both Turnstile halves. Only `NEXT_PUBLIC_TURNSTILE_SITE_KEY` enters the web component;
+the Turnstile secret and all OAuth credentials enter the API component. Customer cookies are
+host-only through the same-origin gateway, so the spec deliberately omits
+`SESSION_COOKIE_DOMAIN`.
 
 Render the safe dummy files without making network calls:
 
 ```bash
-python deploy/production/digitalocean/render_config.py --mode dummy
+python deploy/production/digitalocean/render_config.py \
+  --input deploy/production/digitalocean/credentials.example.env --mode dummy
 ```
 
 This creates a mode-0600 `app.local.yaml`, which is git-ignored. Dummy mode only proves deterministic substitution and YAML structure. It is
@@ -43,11 +51,13 @@ not deployable and does not claim that fake services exist.
    the secret, rights-revalidating origin.
 3. Configure the DNS zone and choose one customer hostname. Deploy the trusted geo ingress
    in `deploy/production/geo-edge`, set its `ORIGIN_WEB` to the assigned direct App Platform
-   origin, and route the customer hostname through it. The API is served below
-   `/api` through App Platform's current ingress rules; the prefix is stripped before the
-   request reaches FastAPI. This avoids cross-site cookie and CORS ambiguity and does not
-   depend on the deprecated per-component `routes` field.
-4. Replace every dummy value in `credentials.local.env`, then run
+   origin, and route the customer hostname through it. Browser API calls use Next's
+   same-origin `/api/gateway`; the web service reaches FastAPI through App Platform's private
+   `http://api:8000` service address.
+   App Platform exposes FastAPI directly only for the Stripe webhook, protected media origin,
+   and readiness probe. All other `/api/*` paths fall through to the web service and return
+   404. This does not depend on the deprecated per-component `routes` field.
+4. Fill every required DigitalOcean label in the repository-root `.env`, then run
    `python deploy/production/digitalocean/render_config.py --mode deploy`. Deploy mode
    fails closed on any dummy marker, Stripe test key, malformed signing-secret prefix, or
    short application secret. DigitalOcean database bindables remain literal.
@@ -57,7 +67,7 @@ not deployable and does not claim that fake services exist.
    local rendered file; remove the local rendered files after deployment.
 6. Deploy `deploy/production/cdn` on the media hostname with the same signing and origin
    secrets supplied to the API. Keep `TOKEN_TTL_SECONDS=300`, point `ORIGIN_API` at the
-   public `/api` ingress, and run the CDN acceptance in its README. DigitalOcean Spaces
+   allowlisted public `/api` media origin, and run the CDN acceptance in its README. DigitalOcean Spaces
    presigned URLs are deliberately not used as the playback CDN path because the provider
    documents that presigned requests bypass CDN caching.
 
@@ -72,11 +82,9 @@ read-only Stripe account lookup. Its failure prevents the release from being acc
 public DNS/browser/rollback/backup/alert/content gates still require separate evidence.
 
 Once DNS and the App Platform domain are active, run the parent production public-edge
-smoke with `SMOKE_WEB_ORIGIN=https://<WEB_HOSTNAME>` and
-`SMOKE_API_ORIGIN=https://<WEB_HOSTNAME>/api`. The smoke verifies that ordered ingress
-actually strips `/api`, TLS validates publicly, security headers survive the edge,
-readiness is healthy, request IDs propagate, and anonymous account/Studio/metrics access
-remains denied.
+smoke with `SMOKE_WEB_ORIGIN=https://<WEB_HOSTNAME>`. The smoke verifies the same-origin
+gateway and its private cache policy, TLS and security headers, readiness, request-ID
+propagation, and that non-allowlisted direct API paths return 404.
 
 A separate PostgreSQL 17 backup image runs daily at 03:17 UTC. It uses only the private
 database bindable and a backup-only Spaces identity, creates a custom-format dump without
@@ -86,13 +94,14 @@ Space as private and versioned with lifecycle retention matching `BACKUP_RETENTI
 The scheduled job is implementation evidence only: launch still requires a successful
 isolated restore and measured RPO/RTO against the labeled owner targets.
 
-For the production rehearsal, copy `restore.example.env` to the git-ignored
-`restore.local.env`, create a new empty PostgreSQL database whose name begins with
-`aperture_restore_`, and use a read-only key for the backup Space. Run the verifier from
-the backup image so PostgreSQL client versions match:
+For the production rehearsal, use `restore.example.env` as a non-secret label reference
+and fill the matching restore labels in the repository-root `.env`. Create a new empty
+PostgreSQL database whose name begins with `aperture_restore_`, and use a read-only key
+for the backup Space. Run the verifier from the backup image so PostgreSQL client versions
+match:
 
 ```bash
-docker run --rm --env-file deploy/production/digitalocean/restore.local.env \
+docker run --rm --env-file .env \
   aperture-backup:production-readiness \
   /opt/aperture-backup/bin/python /app/production_restore_verify.py
 ```
@@ -106,20 +115,22 @@ database through the provider console.
 
 ## Traffic rollback rehearsal
 
-Copy `rollback.example.env` to the git-ignored `rollback.local.env`, use a short-lived
-least-privilege operator token, and explicitly select a previously successful deployment.
-Inspecting the target is read-only:
+Use `rollback.example.env` as a non-secret label reference, put the matching labels in the
+repository-root `.env`, use a short-lived least-privilege operator token, and explicitly
+select a previously successful deployment.
+The rollback tool reads only its allowlisted labels without evaluating the dotenv file as
+shell code; explicitly supplied process variables take precedence. Inspecting the target is
+read-only:
 
 ```bash
-set -a; source deploy/production/digitalocean/rollback.local.env; set +a
-python3 deploy/production/digitalocean/digitalocean_rollback.py --mode inspect
+python3 deploy/production/digitalocean/digitalocean_rollback.py --input .env --mode inspect
 ```
 
 Execution calls App Platform's rollback endpoint only after the target inspection passes
 and the exact confirmation phrase is present:
 
 ```bash
-python3 deploy/production/digitalocean/digitalocean_rollback.py --mode execute
+python3 deploy/production/digitalocean/digitalocean_rollback.py --input .env --mode execute
 ```
 
 The script returns only stable JSON evidence and never provider error bodies or token

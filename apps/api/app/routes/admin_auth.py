@@ -1,3 +1,4 @@
+import ipaddress
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
@@ -52,6 +53,73 @@ def audit(db: DbSession, request: Request, action: str, outcome: str, admin_id=N
     )
 
 
+def issue_admin_session(
+    db: DbSession,
+    request: Request,
+    response: Response,
+    admin: Admin,
+    *,
+    audit_action: str,
+) -> AdminResponse:
+    raw_token, hashed_token = new_session_token()
+    db.add(
+        AdminSession(
+            admin=admin,
+            token_hash=hashed_token,
+            user_agent=request.headers.get("user-agent"),
+            ip_address=request.client.host if request.client else None,
+            expires_at=datetime.now(UTC) + timedelta(hours=settings.admin_session_hours),
+        )
+    )
+    audit(db, request, audit_action, "succeeded", admin.id)
+    db.commit()
+    response.set_cookie(
+        settings.admin_session_cookie,
+        raw_token,
+        max_age=settings.admin_session_hours * 3600,
+        httponly=True,
+        secure=settings.app_env not in {"development", "test"},
+        samesite="strict",
+        path="/",
+        domain=settings.admin_session_cookie_domain,
+    )
+    return AdminResponse(id=admin.id, email=admin.email, mfa_enabled=admin.mfa_enabled)
+
+
+def request_is_local(request: Request) -> bool:
+    if request.client is None:
+        return False
+    host = request.client.host
+    if host == "testclient":
+        return True
+    try:
+        address = ipaddress.ip_address(host.split("%", maxsplit=1)[0])
+    except ValueError:
+        return False
+    if address.is_loopback:
+        return True
+    return bool(
+        isinstance(address, ipaddress.IPv6Address)
+        and address.ipv4_mapped is not None
+        and address.ipv4_mapped.is_loopback
+    )
+
+
+def require_development_session_request(request: Request) -> None:
+    if settings.app_env != "development" or not settings.studio_dev_auto_login:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    expected_origin = str(
+        settings.admin_web_origin
+        if settings.private_studio_required and settings.admin_web_origin is not None
+        else settings.web_origin
+    ).rstrip("/")
+    supplied_origin = request.headers.get("origin")
+    if supplied_origin is None or supplied_origin.rstrip("/") != expected_origin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Untrusted request origin")
+    if not request_is_local(request):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Development session requires localhost")
+
+
 @router.post("/login", response_model=AdminResponse)
 async def login(
     payload: AdminLoginRequest, request: Request, response: Response, db: DbSession
@@ -94,29 +162,28 @@ async def login(
             recovery.used_at = datetime.now(UTC)
             audit(db, request, "admin.mfa.recovery_used", "succeeded", admin.id)
 
-    raw_token, hashed_token = new_session_token()
-    db.add(
-        AdminSession(
-            admin=admin,
-            token_hash=hashed_token,
-            user_agent=request.headers.get("user-agent"),
-            ip_address=request.client.host if request.client else None,
-            expires_at=datetime.now(UTC) + timedelta(hours=settings.admin_session_hours),
+    return issue_admin_session(db, request, response, admin, audit_action="admin.login")
+
+
+@router.post("/development-session", response_model=AdminResponse)
+def development_session(request: Request, response: Response, db: DbSession) -> AdminResponse:
+    require_development_session_request(request)
+    configured_email = str(settings.studio_dev_admin_email or "").strip().lower()
+    admin = db.scalar(
+        select(Admin).where(
+            Admin.email == configured_email,
+            Admin.is_active.is_(True),
         )
     )
-    audit(db, request, "admin.login", "succeeded", admin.id)
-    db.commit()
-    response.set_cookie(
-        settings.admin_session_cookie,
-        raw_token,
-        max_age=settings.admin_session_hours * 3600,
-        httponly=True,
-        secure=settings.app_env not in {"development", "test"},
-        samesite="strict",
-        path="/",
-        domain=settings.admin_session_cookie_domain,
+    if admin is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    return issue_admin_session(
+        db,
+        request,
+        response,
+        admin,
+        audit_action="admin.development_session",
     )
-    return AdminResponse(id=admin.id, email=admin.email, mfa_enabled=admin.mfa_enabled)
 
 
 @router.get("/me", response_model=AdminResponse)

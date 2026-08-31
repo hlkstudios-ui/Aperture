@@ -131,11 +131,27 @@ class Franchise(NamedCatalogRecord, Base):
 
 class Company(NamedCatalogRecord, Base):
     __tablename__ = "companies"
+    __table_args__ = (
+        Index(
+            "ix_companies_name_trgm",
+            "name",
+            postgresql_using="gin",
+            postgresql_ops={"name": "gin_trgm_ops"},
+        ),
+    )
     country_code: Mapped[str | None] = mapped_column(ForeignKey("countries.code"))
 
 
 class Person(Base):
     __tablename__ = "people"
+    __table_args__ = (
+        Index(
+            "ix_people_name_trgm",
+            "name",
+            postgresql_using="gin",
+            postgresql_ops={"name": "gin_trgm_ops"},
+        ),
+    )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(180), index=True)
     slug: Mapped[str] = mapped_column(String(200), unique=True, index=True)
@@ -146,6 +162,14 @@ class Person(Base):
 
 class Character(Base):
     __tablename__ = "characters"
+    __table_args__ = (
+        Index(
+            "ix_characters_name_trgm",
+            "name",
+            postgresql_using="gin",
+            postgresql_ops={"name": "gin_trgm_ops"},
+        ),
+    )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(180), index=True)
     slug: Mapped[str] = mapped_column(String(200), unique=True, index=True)
@@ -170,6 +194,18 @@ class Movie(Base):
         ),
         Index("ix_movies_status_release_date", "status", "release_date"),
         Index("ix_movies_allowed_territories", "allowed_territories", postgresql_using="gin"),
+        Index(
+            "ix_movies_title_trgm",
+            "title",
+            postgresql_using="gin",
+            postgresql_ops={"title": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_movies_original_title_trgm",
+            "original_title",
+            postgresql_using="gin",
+            postgresql_ops={"original_title": "gin_trgm_ops"},
+        ),
         Index(
             "uq_movies_provider_external_id",
             "metadata_provider",
@@ -230,6 +266,18 @@ class Series(Base):
         ),
         Index("ix_series_status_release_date", "status", "release_date"),
         Index("ix_series_allowed_territories", "allowed_territories", postgresql_using="gin"),
+        Index(
+            "ix_series_title_trgm",
+            "title",
+            postgresql_using="gin",
+            postgresql_ops={"title": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_series_original_title_trgm",
+            "original_title",
+            postgresql_using="gin",
+            postgresql_ops={"original_title": "gin_trgm_ops"},
+        ),
         Index(
             "uq_series_provider_external_id",
             "metadata_provider",

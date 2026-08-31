@@ -6,13 +6,14 @@ from sqlalchemy import select
 
 from app.catalog_models import Genre, Movie
 from app.catalog_service import movie_query
+from app.catalog_visibility import public_title_conditions
 from app.models import Profile
 from app.recommendation_schemas import (
     PrescriptionDimension,
     PrescriptionRequest,
     PrescriptionResponse,
 )
-from app.scheduling import availability_clause, synchronize_due_schedules
+from app.scheduling import synchronize_due_schedules
 from app.taste_service import taste_dna, watched_titles
 
 MOOD_TERMS = {
@@ -88,7 +89,7 @@ def prescribe(
     candidates = list(
         db.scalars(
             movie_query().where(
-                availability_clause(Movie, country=country),
+                *public_title_conditions(Movie, country=country),
                 Movie.id.not_in(request.exclude_movie_ids),
             )
         ).unique()

@@ -2,8 +2,9 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { API_GATEWAY_PREFIX } from "@/app/lib/api-gateway";
 
-const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8000";
+const apiOrigin = API_GATEWAY_PREFIX;
 type Toolkit = {
   title: string; effective_cutoff: number; safety_state: string;
   stills: Array<{ id: string; alt_text: string; width: number | null; height: number | null; timestamp_seconds: number; image_url: string }>;

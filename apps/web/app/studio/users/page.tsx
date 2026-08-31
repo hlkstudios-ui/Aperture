@@ -1,4 +1,5 @@
 import Link from "next/link";
+
 import { adminCatalogFetch } from "@/app/lib/admin-catalog";
 import { requireAdminSession } from "@/app/lib/admin-session";
 import { StudioShell } from "@/app/studio/components/studio-shell";
@@ -15,7 +16,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
   return <StudioShell admin={admin} active="users" eyebrow="Customer support" title="Users">
     <p className="editor-intro">Search customer accounts, inspect entitlements, revoke sessions, and control access. Every support mutation is reason-gated and audited.</p>
     <form className="studio-toolbar" method="get"><label>Search customers <input name="q" defaultValue={q} placeholder="email address" /></label><button type="submit">Search</button></form>
-    <section className="editor-panel"><p className="eyebrow">{result.total} customers</p><div className="table-scroll"><table><thead><tr><th>Email</th><th>State</th><th>Profiles</th><th>Sessions</th><th>Subscription</th><th /></tr></thead><tbody>
+    <section className="editor-panel"><p className="eyebrow">{result.total} customers</p><div className="table-scroll" tabIndex={0} role="region" aria-label="Customer account ledger"><table className="users-table"><thead><tr><th>Email</th><th>State</th><th>Profiles</th><th>Sessions</th><th>Subscription</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>
       {result.items.map((user) => <tr key={user.id}><td>{user.email}</td><td>{user.is_active ? "Active" : "Disabled"}</td><td>{user.profile_count}</td><td>{user.active_session_count}</td><td>{user.plan_name ? `${user.plan_name} · ${user.subscription_status}` : "None"}</td><td><Link href={`/studio/users/${user.id}`}>Open</Link></td></tr>)}
     </tbody></table></div>{!result.items.length && <p className="studio-empty-inline">No customers match this search.</p>}</section>
   </StudioShell>;

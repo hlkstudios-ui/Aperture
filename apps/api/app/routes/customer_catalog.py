@@ -1,8 +1,17 @@
+from typing import Annotated
+
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.orm import with_loader_criteria
 
 from app.auth import DbSession
+from app.browse_schemas import (
+    BrowseQuery,
+    BrowseResponse,
+    TmdbBrowseSectionsResponse,
+    TmdbTrendingTitlesResponse,
+)
+from app.browse_service import browse_catalog
 from app.catalog_models import (
     Artwork,
     CatalogStatus,
@@ -32,33 +41,18 @@ from app.catalog_schemas import (
     SeriesResponse,
 )
 from app.catalog_service import movie_query, series_query
+from app.catalog_visibility import public_named_record_condition, public_title_conditions
 from app.geo import OptionalViewerCountry
 from app.knowledge_schemas import CreditDestination, FilmKnowledgeGraph
 from app.knowledge_service import credit_destination, film_graph
 from app.models import PlaybackSource, ProcessingJob, ProcessingState
-from app.scheduling import availability_clause, synchronize_due_schedules
+from app.movie_api_client import movie_api_enabled
+from app.scheduling import synchronize_due_schedules
 from app.search_schemas import UniversalEntityResult, UniversalSearchResponse, UniversalTitleResult
-from app.tmdb_discovery import search_tmdb, tmdb_title
+from app.tmdb_browse_service import tmdb_browse_sections, tmdb_trending_titles
+from app.tmdb_discovery import aperture_title, search_tmdb, tmdb_title
 
 router = APIRouter(prefix="/catalog", tags=["customer catalog"])
-TEST_FIXTURE_SLUG_PREFIXES = (
-    "analytics-fixture-",
-    "club-film-",
-    "community-film-",
-    "expired-",
-    "playback-fixture-",
-    "rate-limit-film-",
-    "recommendation-popular-",
-    "recommendation-similar-",
-    "recommendation-watched-",
-    "scene-lease-",
-    "the-lantern-sea-",
-    "visible-",
-)
-
-
-def exclude_test_movie_fixtures():
-    return tuple(Movie.slug.not_like(f"{prefix}%") for prefix in TEST_FIXTURE_SLUG_PREFIXES)
 
 
 PUBLIC_NAMED_RESOURCES = {
@@ -210,9 +204,7 @@ def universal_search(
     tokens = [token for token in query.split(" ") if token][:8]
     movie_filter = and_(*(_movie_token(token) for token in tokens))
     series_filter = and_(*(_series_token(token) for token in tokens))
-    movie_base = movie_query().where(
-        availability_clause(Movie, country=country), *exclude_test_movie_fixtures(), movie_filter
-    )
+    movie_base = movie_query().where(*public_title_conditions(Movie, country=country), movie_filter)
     series_base = (
         series_query()
         .options(
@@ -220,15 +212,14 @@ def universal_search(
                 Episode, Episode.status == CatalogStatus.published, include_aliases=True
             )
         )
-        .where(availability_clause(Series, country=country), series_filter)
+        .where(*public_title_conditions(Series, country=country), series_filter)
     )
     total_movies = (
         db.scalar(
             select(func.count()).select_from(
                 select(Movie.id)
                 .where(
-                    availability_clause(Movie, country=country),
-                    *exclude_test_movie_fixtures(),
+                    *public_title_conditions(Movie, country=country),
                     movie_filter,
                 )
                 .subquery()
@@ -240,7 +231,7 @@ def universal_search(
         db.scalar(
             select(func.count()).select_from(
                 select(Series.id)
-                .where(availability_clause(Series, country=country), series_filter)
+                .where(*public_title_conditions(Series, country=country), series_filter)
                 .subquery()
             )
         )
@@ -274,6 +265,8 @@ def universal_search(
                 original_language_code=record.original_language_code,
                 studios=record.studios,
                 genres=[genre.name for genre in record.genres],
+                duration_minutes=record.runtime_minutes if kind == "movie" else None,
+                is_ongoing=record.is_ongoing if kind == "series" else None,
                 season_count=len(seasons),
                 episode_count=sum(len(season.episodes) for season in seasons),
                 href=f"/{'movies' if kind == 'movie' else 'series'}/{record.slug}",
@@ -295,8 +288,16 @@ def universal_search(
             *(_text_match(model.name, token) for token in tokens),
             *(func.similarity(model.name, token) > 0.28 for token in tokens if len(token) >= 4),
         )
-        matches = list(db.scalars(select(model).where(condition).order_by(model.name).limit(12)))
-        total_entities += db.scalar(select(func.count()).select_from(model).where(condition)) or 0
+        public_condition = public_named_record_condition(model, country=country)
+        matches = list(
+            db.scalars(
+                select(model).where(condition, public_condition).order_by(model.name).limit(12)
+            )
+        )
+        total_entities += (
+            db.scalar(select(func.count()).select_from(model).where(condition, public_condition))
+            or 0
+        )
         for item in matches:
             href = (
                 f"/{'people' if kind == 'person' else 'companies'}/{item.slug}"
@@ -314,10 +315,22 @@ def universal_search(
         for kind, record in combined
         if record.metadata_provider == "tmdb" and record.external_id
     }
-    external = [item for item in external if item.id not in local_tmdb_ids]
+    local_gateway_ids = {
+        str(record.external_id)
+        for _kind, record in combined
+        if record.metadata_provider == "aperture_movie_api" and record.external_id
+    }
+    external_ids = {item.id for item in external}
+    overlap_count = len(local_tmdb_ids & external_ids)
+    external = [
+        item
+        for item in external
+        if item.id not in local_tmdb_ids and item.id not in local_gateway_ids
+    ]
     remaining = max(0, page_size - len(titles))
     titles.extend(external[:remaining])
-    total_titles = total_movies + total_series + max(0, external_total - len(local_tmdb_ids))
+    unique_external_total = max(len(external), external_total - overlap_count)
+    total_titles = total_movies + total_series + unique_external_total
     return UniversalSearchResponse(
         query=query,
         page=page,
@@ -332,26 +345,86 @@ def universal_search(
 
 @router.get("/external/tmdb/{kind}/{external_id}", response_model=UniversalTitleResult)
 def external_tmdb_title(kind: str, external_id: int) -> UniversalTitleResult:
+    if movie_api_enabled():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Title was not found")
     result = tmdb_title(kind, external_id)
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "External title was not found")
     return result
 
 
+@router.get("/titles/{aperture_id}", response_model=UniversalTitleResult)
+def aperture_movie_api_title(aperture_id: str) -> UniversalTitleResult:
+    result = aperture_title(aperture_id)
+    if result is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Title was not found")
+    return result
+
+
+@router.get("/browse", response_model=BrowseResponse)
+def browse(
+    db: DbSession,
+    country: OptionalViewerCountry,
+    filters: Annotated[BrowseQuery, Query()],
+) -> BrowseResponse:
+    """Page through the local catalog with character-aware search and structured facets."""
+    synchronize_due_schedules(db)
+    return browse_catalog(db, filters=filters, country=country)
+
+
+@router.get("/browse/sections", response_model=TmdbBrowseSectionsResponse)
+def browse_sections(
+    page: int = Query(default=1, ge=1, le=100),
+    page_size: int = Query(default=6, ge=1, le=10),
+    items_per_section: int = Query(default=18, ge=8, le=20),
+) -> TmdbBrowseSectionsResponse:
+    """Page through 100 stable, server-curated TMDB discovery rails."""
+    return tmdb_browse_sections(
+        page=page,
+        page_size=page_size,
+        items_per_section=items_per_section,
+    )
+
+
+@router.get("/trending", response_model=TmdbTrendingTitlesResponse)
+def trending_titles(
+    page: int = Query(default=1, ge=1, le=500),
+) -> TmdbTrendingTitlesResponse:
+    """Page through the provider-ranked weekly movie and series pulse."""
+    return tmdb_trending_titles(page=page)
+
+
 @router.get("/metadata/{resource}", response_model=list[NamedRecordResponse])
-def metadata(resource: str, db: DbSession, limit: int = Query(default=100, ge=1, le=500)):
+def metadata(
+    resource: str,
+    db: DbSession,
+    country: OptionalViewerCountry,
+    limit: int = Query(default=100, ge=1, le=500),
+):
     model = PUBLIC_NAMED_RESOURCES.get(resource)
     if model is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Catalog metadata resource was not found")
-    return list(db.scalars(select(model).order_by(model.name).limit(limit)))
+    return list(
+        db.scalars(
+            select(model)
+            .where(public_named_record_condition(model, country=country))
+            .order_by(model.name)
+            .limit(limit)
+        )
+    )
 
 
 @router.get("/metadata/{resource}/{slug}", response_model=NamedRecordResponse)
-def metadata_record(resource: str, slug: str, db: DbSession):
+def metadata_record(resource: str, slug: str, db: DbSession, country: OptionalViewerCountry):
     model = PUBLIC_NAMED_RESOURCES.get(resource)
     if model is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Catalog metadata resource was not found")
-    record = db.scalar(select(model).where(model.slug == slug))
+    record = db.scalar(
+        select(model).where(
+            model.slug == slug,
+            public_named_record_condition(model, country=country),
+        )
+    )
     if record is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Catalog metadata record was not found")
     return record
@@ -374,8 +447,7 @@ def movies(
 ) -> list[Movie]:
     synchronize_due_schedules(db)
     statement = movie_query().where(
-        availability_clause(Movie, country=country),
-        *exclude_test_movie_fixtures(),
+        *public_title_conditions(Movie, country=country),
     )
     if query:
         pattern = f"%{query.strip()}%"
@@ -393,7 +465,7 @@ def movie(slug: str, db: DbSession, country: OptionalViewerCountry) -> Movie:
     record = db.scalar(
         movie_query().where(
             Movie.slug == slug,
-            availability_clause(Movie, country=country),
+            *public_title_conditions(Movie, country=country),
         )
     )
     if record is None:
@@ -410,6 +482,14 @@ def movie_knowledge_graph(
 
 @router.get("/people/{slug}/credits", response_model=CreditDestination)
 def person_credits(slug: str, db: DbSession, country: OptionalViewerCountry) -> CreditDestination:
+    eligible = db.scalar(
+        select(Person.id).where(
+            Person.slug == slug,
+            public_named_record_condition(Person, country=country),
+        )
+    )
+    if eligible is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Person was not found")
     result = credit_destination(db, kind="person", slug=slug, country=country)
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Person was not found")
@@ -418,6 +498,14 @@ def person_credits(slug: str, db: DbSession, country: OptionalViewerCountry) -> 
 
 @router.get("/companies/{slug}/credits", response_model=CreditDestination)
 def company_credits(slug: str, db: DbSession, country: OptionalViewerCountry) -> CreditDestination:
+    eligible = db.scalar(
+        select(Company.id).where(
+            Company.slug == slug,
+            public_named_record_condition(Company, country=country),
+        )
+    )
+    if eligible is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Company was not found")
     result = credit_destination(db, kind="company", slug=slug, country=country)
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Company was not found")
@@ -428,14 +516,13 @@ def company_credits(slug: str, db: DbSession, country: OptionalViewerCountry) ->
 def movie_playback_availability(
     slug: str, db: DbSession, country: OptionalViewerCountry
 ) -> dict[str, bool]:
-    synchronize_due_schedules(db)
+    record = movie(slug, db, country)
     available = db.scalar(
         select(PlaybackSource.id)
         .join(Movie, PlaybackSource.movie_id == Movie.id)
         .join(ProcessingJob, PlaybackSource.processing_job_id == ProcessingJob.id)
         .where(
-            Movie.slug == slug,
-            availability_clause(Movie, country=country),
+            Movie.id == record.id,
             ProcessingJob.state == ProcessingState.ready,
         )
     )
@@ -481,7 +568,7 @@ def series_list(
                 Episode, Episode.status == CatalogStatus.published, include_aliases=True
             )
         )
-        .where(availability_clause(Series, country=country))
+        .where(*public_title_conditions(Series, country=country))
     )
     if query:
         pattern = f"%{query.strip()}%"
@@ -503,7 +590,7 @@ def series(slug: str, db: DbSession, country: OptionalViewerCountry) -> Series:
                 Episode, Episode.status == CatalogStatus.published, include_aliases=True
             )
         )
-        .where(Series.slug == slug, availability_clause(Series, country=country))
+        .where(Series.slug == slug, *public_title_conditions(Series, country=country))
     )
     if record is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Series was not found")

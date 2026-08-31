@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-
-const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8000";
+import { apiGatewayPath } from "@/app/lib/api-gateway";
 
 export function ResetRequestForm() {
   const [message, setMessage] = useState("");
@@ -12,7 +11,7 @@ export function ResetRequestForm() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
-    const response = await fetch(`${apiOrigin}/auth/password-reset/request`, {
+    const response = await fetch(apiGatewayPath("/auth/password-reset/request"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: data.get("email") }),

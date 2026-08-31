@@ -89,7 +89,7 @@ def update_collection(
 @router.get("/journeys", response_model=list[JourneyResponse])
 def journeys(db: DbSession):
     return [
-        journey_response(db, load_journey(db, journey_id=x.id))
+        journey_response(db, load_journey(db, journey_id=x.id), include_empty_chapters=True)
         for x in db.scalars(select(Journey).order_by(Journey.updated_at.desc()))
     ]
 
@@ -102,7 +102,9 @@ def create_journey(payload: JourneyWrite, request: Request, db: DbSession, admin
     replace_journey_chapters(db, record, payload.chapters)
     audit(db, request, admin, "curation.journey.created", record)
     db.commit()
-    return journey_response(db, load_journey(db, journey_id=record.id))
+    return journey_response(
+        db, load_journey(db, journey_id=record.id), include_empty_chapters=True
+    )
 
 
 @router.put("/journeys/{journey_id}", response_model=JourneyResponse)
@@ -119,4 +121,6 @@ def update_journey(
     replace_journey_chapters(db, record, payload.chapters)
     audit(db, request, admin, "curation.journey.updated", record)
     db.commit()
-    return journey_response(db, load_journey(db, journey_id=record.id))
+    return journey_response(
+        db, load_journey(db, journey_id=record.id), include_empty_chapters=True
+    )

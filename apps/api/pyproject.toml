@@ -11,6 +11,8 @@ dependencies = [
   "email-validator==2.3.0",
   "fastapi==0.141.1",
   "httpx==0.28.1",
+  "idna==3.19",
+  "pillow==12.3.0",
   "psycopg[binary]==3.3.3",
   "pydantic-settings==2.14.2",
   "pyyaml==6.0.3",
@@ -25,6 +27,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "httpx==0.28.1",
+  "httpx2==2.12.0",
   "pip-audit==2.10.1",
   "pip-tools==7.6.1",
   "pytest==9.0.3",

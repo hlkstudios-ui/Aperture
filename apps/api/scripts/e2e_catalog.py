@@ -9,12 +9,15 @@ from sqlalchemy import delete, select
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from e2e_guard import require_e2e_test_environment  # noqa: E402
+
 from app.catalog_models import Character, Company, Movie, Person, Series  # noqa: E402
 from app.curation_models import Collection, Journey  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
 
 
 def main() -> None:
+    require_e2e_test_environment()
     command = json.load(sys.stdin)
     prefix = str(command["slug_prefix"])
     if not prefix.startswith("e2e-studio-draft-"):

@@ -3,9 +3,9 @@
 import json
 import sys
 
+from e2e_guard import require_e2e_test_environment
 from sqlalchemy import delete, select
 
-from app.config import get_settings
 from app.db import SessionLocal
 from app.media_worker import delete_prefix
 from app.models import MediaAsset, ProcessingJob
@@ -15,16 +15,17 @@ PREFIX = "e2e-upload-"
 
 
 def main() -> None:
+    settings = require_e2e_test_environment()
     payload = json.load(sys.stdin)
     filename = payload["filename"]
-    if get_settings().app_env not in {"development", "test"} or not filename.startswith(PREFIX):
-        raise SystemExit("E2E upload helper is restricted to prefixed development fixtures")
+    if not filename.startswith(PREFIX):
+        raise SystemExit("E2E upload helper is restricted to prefixed browser-test fixtures")
     with SessionLocal() as db:
         asset = db.scalar(select(MediaAsset).where(MediaAsset.original_filename == filename))
         if payload["action"] == "inspect":
             if asset is None:
                 raise SystemExit("Asset was not found")
-            head = s3_client().head_object(Bucket=get_settings().s3_bucket, Key=asset.storage_key)
+            head = s3_client().head_object(Bucket=settings.s3_bucket, Key=asset.storage_key)
             print(
                 json.dumps(
                     {
@@ -49,7 +50,7 @@ def main() -> None:
             if job.manifest_key:
                 manifest = (
                     s3_client()
-                    .get_object(Bucket=get_settings().s3_bucket, Key=job.manifest_key)["Body"]
+                    .get_object(Bucket=settings.s3_bucket, Key=job.manifest_key)["Body"]
                     .read()
                     .decode()
                 )
@@ -77,7 +78,7 @@ def main() -> None:
                 job = db.scalar(select(ProcessingJob).where(ProcessingJob.asset_id == asset.id))
                 if job:
                     delete_prefix(f"processed/{asset.id}/{job.id}")
-                s3_client().delete_object(Bucket=get_settings().s3_bucket, Key=asset.storage_key)
+                s3_client().delete_object(Bucket=settings.s3_bucket, Key=asset.storage_key)
                 db.execute(delete(MediaAsset).where(MediaAsset.id == asset.id))
                 db.commit()
             print(json.dumps({"deleted": bool(asset)}))

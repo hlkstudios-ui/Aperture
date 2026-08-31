@@ -3,16 +3,15 @@
 import json
 import sys
 
+from e2e_guard import require_e2e_test_environment
 from sqlalchemy import func, select
 
-from app.config import get_settings
 from app.db import SessionLocal
 from app.models import AnalyticsEvent, Profile, ProfilePreference, User
 
 
 def main() -> None:
-    if get_settings().app_env not in {"development", "test"}:
-        raise SystemExit("E2E privacy inspection is disabled outside development/test")
+    require_e2e_test_environment()
     email = str(json.load(sys.stdin)["email"]).strip().lower()
     if not email.endswith("@example.com"):
         raise SystemExit("E2E customer email must use example.com")

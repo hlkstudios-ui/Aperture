@@ -5,11 +5,11 @@ import json
 import sys
 from datetime import UTC, date, datetime
 
+from e2e_guard import require_e2e_test_environment
 from sqlalchemy import delete, select
 
 from app.auth import hash_password
 from app.catalog_models import CatalogStatus, Movie
-from app.config import get_settings
 from app.db import SessionLocal
 from app.media_worker import delete_prefix
 from app.models import (
@@ -26,9 +26,10 @@ PREFIX = "e2e-club-playback-"
 
 
 def main() -> None:
+    settings = require_e2e_test_environment()
     payload = json.load(sys.stdin)
     slug = payload["slug"]
-    if get_settings().app_env not in {"development", "test"} or not slug.startswith(PREFIX):
+    if not slug.startswith(PREFIX):
         raise SystemExit("Club fixture helper is restricted to prefixed E2E records")
     with SessionLocal() as db:
         movie = db.scalar(select(Movie).where(Movie.slug == slug))
@@ -94,7 +95,7 @@ def main() -> None:
         db.add(PlaybackSource(processing_job_id=job.id, movie_id=movie.id))
         db.commit()
         s3_client().put_object(
-            Bucket=get_settings().s3_bucket,
+            Bucket=settings.s3_bucket,
             Key=job.manifest_key,
             Body=b"#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-ENDLIST\n",
             ContentType="application/vnd.apple.mpegurl",

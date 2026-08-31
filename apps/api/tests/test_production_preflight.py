@@ -32,6 +32,17 @@ def test_billing_preflight_authenticates_without_mutation(monkeypatch) -> None:
     assert result.code == "provider_account_authenticated_read_only"
     assert captured == {"api_key": "sk_live_fake"}
 
+    captured.clear()
+    result = billing_check(
+        SimpleNamespace(
+            billing_provider="disabled",
+            stripe_secret_key="sk_live_unused_must_not_be_called",
+        )
+    )
+    assert result.status == "pass"
+    assert result.code == "payments_intentionally_disabled"
+    assert captured == {}
+
     result = billing_check(SimpleNamespace(billing_provider="unavailable", stripe_secret_key=None))
     assert result.status == "fail"
     assert result.code == "supported_provider_not_configured"

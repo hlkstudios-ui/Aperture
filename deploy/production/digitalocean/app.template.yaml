@@ -14,9 +14,46 @@ ingress:
   rules:
     - component:
         name: api
+        rewrite: /billing/stripe/webhook
       match:
         path:
-          prefix: /api
+          exact: /api/billing/stripe/webhook
+    - component:
+        name: api
+        rewrite: /edge-media
+      match:
+        path:
+          prefix: /api/edge-media
+    - component:
+        name: api
+        rewrite: /ready
+      match:
+        path:
+          exact: /api/ready
+    - component:
+        name: web
+        preserve_path_prefix: true
+      match:
+        path:
+          prefix: /api/gateway
+    - component:
+        name: web
+        preserve_path_prefix: true
+      match:
+        path:
+          prefix: /api/catalog
+    - component:
+        name: web
+        preserve_path_prefix: true
+      match:
+        path:
+          prefix: /api/document-locale
+    - component:
+        name: web
+        preserve_path_prefix: true
+      match:
+        path:
+          prefix: /api/site
     - component:
         name: web
       match:
@@ -29,13 +66,10 @@ envs:
   - key: API_ORIGIN
     value: https://${WEB_HOSTNAME}/api
     scope: RUN_AND_BUILD_TIME
-  - key: NEXT_PUBLIC_API_ORIGIN
-    value: /api
-    scope: RUN_AND_BUILD_TIME
   - key: NEXT_PUBLIC_OBJECT_STORAGE_ORIGIN
     value: https://tor1.digitaloceanspaces.com
     scope: RUN_AND_BUILD_TIME
-  - key: NEXT_PUBLIC_MEDIA_ORIGIN
+  - key: MEDIA_SOURCE_ORIGINS
     value: https://${CDN_HOSTNAME}
     scope: RUN_AND_BUILD_TIME
   - key: NEXT_PUBLIC_FEATURE_SCENE_LENS_ENABLED
@@ -92,9 +126,6 @@ x-api-envs: &api-envs
     scope: RUN_TIME
   - key: BILLING_PROVIDER
     value: stripe
-    scope: RUN_TIME
-  - key: SESSION_COOKIE_DOMAIN
-    value: .${DNS_ZONE}
     scope: RUN_TIME
   - key: S3_ACCESS_KEY
     value: ${S3_ACCESS_KEY}
@@ -219,6 +250,65 @@ x-api-envs: &api-envs
   - key: MALWARE_SCANNER_TIMEOUT_SECONDS
     value: "30"
     scope: RUN_TIME
+x-api-auth-envs: &api-auth-envs
+  - key: OAUTH_GOOGLE_CLIENT_ID
+    value: "${OAUTH_GOOGLE_CLIENT_ID}"
+    scope: RUN_TIME
+    type: SECRET
+  - key: OAUTH_GOOGLE_CLIENT_SECRET
+    value: "${OAUTH_GOOGLE_CLIENT_SECRET}"
+    scope: RUN_TIME
+    type: SECRET
+  - key: OAUTH_MICROSOFT_CLIENT_ID
+    value: "${OAUTH_MICROSOFT_CLIENT_ID}"
+    scope: RUN_TIME
+    type: SECRET
+  - key: OAUTH_MICROSOFT_CLIENT_SECRET
+    value: "${OAUTH_MICROSOFT_CLIENT_SECRET}"
+    scope: RUN_TIME
+    type: SECRET
+  - key: OAUTH_GITHUB_CLIENT_ID
+    value: "${OAUTH_GITHUB_CLIENT_ID}"
+    scope: RUN_TIME
+    type: SECRET
+  - key: OAUTH_GITHUB_CLIENT_SECRET
+    value: "${OAUTH_GITHUB_CLIENT_SECRET}"
+    scope: RUN_TIME
+    type: SECRET
+  - key: OAUTH_APPLE_CLIENT_ID
+    value: "${OAUTH_APPLE_CLIENT_ID}"
+    scope: RUN_TIME
+    type: SECRET
+  - key: OAUTH_APPLE_CLIENT_SECRET
+    value: "${OAUTH_APPLE_CLIENT_SECRET}"
+    scope: RUN_TIME
+    type: SECRET
+  - key: CAPTCHA_REQUIRED
+    value: "${CAPTCHA_REQUIRED}"
+    scope: RUN_TIME
+  - key: CAPTCHA_TEST_MODE
+    value: "false"
+    scope: RUN_TIME
+  - key: TURNSTILE_SECRET_KEY
+    value: ${TURNSTILE_SECRET_KEY}
+    scope: RUN_TIME
+    type: SECRET
+  - key: BRAND_AI_PROVIDER
+    value: ${BRAND_AI_PROVIDER}
+    scope: RUN_TIME
+  - key: BRAND_AI_MODEL
+    value: ${BRAND_AI_MODEL}
+    scope: RUN_TIME
+  - key: BRAND_AI_TIMEOUT_SECONDS
+    value: ${BRAND_AI_TIMEOUT_SECONDS}
+    scope: RUN_TIME
+  - key: BRAND_AI_RATE_LIMIT_PER_HOUR
+    value: ${BRAND_AI_RATE_LIMIT_PER_HOUR}
+    scope: RUN_TIME
+  - key: OPENAI_API_KEY
+    value: ${OPENAI_API_KEY}
+    scope: RUN_TIME
+    type: SECRET
 x-backup-envs: &backup-envs
   - key: BACKUP_DATABASE_URL
     value: ${aperture-postgres.DATABASE_PRIVATE_URL}
@@ -322,9 +412,19 @@ services:
     http_port: 3000
     health_check:
       http_path: /
+    envs:
+      - key: API_ORIGIN
+        value: http://api:8000
+        scope: RUN_AND_BUILD_TIME
+      - key: CAPTCHA_REQUIRED
+        value: "${CAPTCHA_REQUIRED}"
+        scope: RUN_AND_BUILD_TIME
+      - key: NEXT_PUBLIC_TURNSTILE_SITE_KEY
+        value: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+        scope: RUN_AND_BUILD_TIME
 workers:
   - name: media-worker
-    dockerfile_path: apps/api/Dockerfile
+    dockerfile_path: apps/api/Dockerfile.media-worker
     github:
       repo: ${GITHUB_REPOSITORY}
       branch: ${DEPLOY_BRANCH}

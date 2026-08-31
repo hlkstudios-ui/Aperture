@@ -1,6 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const externalBaseUrl = process.env.E2E_BASE_URL;
+import { validateE2EConfiguration } from "./tests/e2e/safety";
+
+const { baseURL } = validateE2EConfiguration();
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -10,10 +12,11 @@ export default defineConfig({
   forbidOnly: true,
   retries: 0,
   expect: { timeout: 15_000 },
+  globalSetup: "./tests/e2e/global-setup.ts",
   reporter: [["list"], ["html", { outputFolder: "playwright-report", open: "never" }]],
   use: {
-    baseURL: externalBaseUrl ?? "http://localhost:3000",
-    ignoreHTTPSErrors: Boolean(externalBaseUrl),
+    baseURL,
+    ignoreHTTPSErrors: true,
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
   },
@@ -25,10 +28,4 @@ export default defineConfig({
     { name: "desktop-firefox", use: { ...devices["Desktop Firefox"] } },
     { name: "desktop-webkit", use: { ...devices["Desktop Safari"] } },
   ],
-  webServer: externalBaseUrl ? undefined : {
-    command: "PATH=/opt/homebrew/bin:$PATH npm run dev:web",
-    url: "http://localhost:3000",
-    reuseExistingServer: true,
-    timeout: 120_000,
-  },
 });

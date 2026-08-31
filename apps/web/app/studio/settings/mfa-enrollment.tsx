@@ -2,8 +2,9 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { API_GATEWAY_PREFIX } from "@/app/lib/api-gateway";
 
-const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8000";
+const apiOrigin = API_GATEWAY_PREFIX;
 
 export function MfaEnrollment({ enabled }: { enabled: boolean }) {
   const router = useRouter();

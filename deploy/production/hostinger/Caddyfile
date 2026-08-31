@@ -9,17 +9,59 @@
 	encode zstd gzip
 
 	route {
+		# The protected media worker uses a dedicated origin credential. Keep this
+		# path outside the general edge admission rule, but fail closed unless the
+		# CDN-only secret is present. FastAPI revalidates it again before streaming.
+		handle /api/edge-media/* {
+			@untrustedMedia not header X-Aperture-Origin-Secret {$CDN_ORIGIN_SECRET}
+			respond @untrustedMedia 404
+			uri strip_prefix /api
+			reverse_proxy api:8000
+		}
+
 		@untrusted not header X-Aperture-Origin-Secret {$ORIGIN_EDGE_SECRET}
 		respond @untrusted 404
 
 		@untrustedStudio {
-			path /studio /studio/* /api/admin /api/admin/*
+			path /studio /studio/* /api/admin /api/admin/* /api/gateway/admin /api/gateway/admin/*
 			not header X-Aperture-Studio-Edge {$STUDIO_EDGE_SECRET}
 		}
 		respond @untrustedStudio 404
 
-		handle_path /api/* {
+		# Cloudflare terminates customer TLS and forwards only an admitted hostname.
+		# The origin-secret denial above makes this header trustworthy here. Rewrite
+		# the application-facing host without adding customer names to Caddy's site
+		# labels, so Caddy never attempts to obtain customer certificates.
+		@trustedPublicHost header X-Aperture-Public-Host *
+		request_header @trustedPublicHost Host {http.request.header.X-Aperture-Public-Host}
+		request_header @trustedPublicHost X-Forwarded-Host {http.request.header.X-Aperture-Public-Host}
+
+		handle /api/gateway/* {
+			reverse_proxy web:3000
+		}
+
+		handle /api/catalog/* {
+			reverse_proxy web:3000
+		}
+
+		handle /api/document-locale {
+			reverse_proxy web:3000
+		}
+
+		handle /api/site/* {
+			reverse_proxy web:3000
+		}
+
+		# These are the only routes that genuinely require direct public API
+		# ingress. All storefront traffic reaches FastAPI through the web gateway.
+		@publicApi path /api/ready /api/billing/stripe/webhook
+		handle @publicApi {
+			uri strip_prefix /api
 			reverse_proxy api:8000
+		}
+
+		handle /api/* {
+			respond 404
 		}
 
 		handle {
@@ -40,6 +82,30 @@
 	request_body {
 		max_size 5GB
 	}
-	reverse_proxy minio:9000
+
+	# The final community MinIO release predates several application-level fixes that
+	# are available only in AIStor. Keep unsupported S3 features and internal
+	# replication metadata outside the public storage boundary.
+	@unsignedTrailer header X-Amz-Content-Sha256 STREAMING-UNSIGNED-PAYLOAD-TRAILER
+	@snowballExtract header X-Amz-Meta-Snowball-Auto-Extract *
+	@s3Select {
+		method POST
+		query select=* select-type=2
+	}
+	@replicationSealedKey header X-Minio-Replication-Server-Side-Encryption-Sealed-Key *
+	@replicationSealAlgorithm header X-Minio-Replication-Server-Side-Encryption-Seal-Algorithm *
+	@replicationIv header X-Minio-Replication-Server-Side-Encryption-Iv *
+	@storageRest path /minio/storage/*
+
+	route {
+		respond @unsignedTrailer 403
+		respond @snowballExtract 403
+		respond @s3Select 403
+		respond @replicationSealedKey 403
+		respond @replicationSealAlgorithm 403
+		respond @replicationIv 403
+		respond @storageRest 404
+		reverse_proxy minio:9000
+	}
 	header -Server
 }

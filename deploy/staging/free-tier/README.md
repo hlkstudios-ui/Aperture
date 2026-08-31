@@ -6,6 +6,8 @@ This target publishes a low-traffic demonstration without changing or weakening 
 
 - Render Free web service: Next.js application.
 - Render Free web service: FastAPI plus co-located media and scene workers.
+- Web runtime: Node.js 24.20.0, pinned in the Render Blueprint.
+- API runtime: Python 3.12.14 on the official Alpine 3.24 minimal image with packaged FFmpeg.
 - Supabase Free: PostgreSQL through the TLS pooled endpoint.
 - Upstash-compatible free tier: TLS Redis.
 - Cloudflare R2 free tier: private, S3-compatible demo media storage.
@@ -13,10 +15,13 @@ This target publishes a low-traffic demonstration without changing or weakening 
 
 Free worker instances are not available in the selected compute tier. `start_api.py` therefore supervises the API and both workers in one disposable container. If any child exits, the container exits so the platform restarts the whole unit. This deliberately differs from production's independent worker supervision.
 
+Keep both runtime versions explicit. Validate this target and build the API image before changing
+either pin; a free-tier staging update must not modify or weaken the Hostinger production target.
+
 ## Owner setup
 
 1. Create the free provider accounts. Provider credentials still belong to the owner and must never be committed.
-2. Copy `credentials.example.env` to the ignored `credentials.local.env` and replace every `DUMMY_*` label.
+2. Use `credentials.example.env` as the non-secret label reference. Put the matching labels in the repository-root `.env` and replace every `DUMMY_*` value there.
 3. Create a private R2 bucket. Configure browser CORS for the exact `STAGING_WEB_ORIGIN`; do not enable anonymous listing or reads.
 4. Use Supabase's pooled TLS URL and a TLS `rediss://` URL. Run no production data through either service.
 5. Validate inputs locally:
@@ -25,7 +30,7 @@ Free worker instances are not available in the selected compute tier. `start_api
    python deploy/staging/free-tier/validate_config.py --mode deploy
    ```
 
-6. Connect the repository to Render and create a Blueprint from `deploy/staging/free-tier/render.yaml`. Copy the corresponding values into each `sync: false` field. For web fields, set `API_ORIGIN`, `NEXT_PUBLIC_API_ORIGIN`, and `NEXT_PUBLIC_MEDIA_ORIGIN` to the API URL; set `NEXT_PUBLIC_OBJECT_STORAGE_ORIGIN` to the R2 S3 endpoint.
+6. Connect the repository to Render and create a Blueprint from `deploy/staging/free-tier/render.yaml`. Copy the corresponding values into each `sync: false` field. For web fields, set the server-only `API_ORIGIN` to the API URL, `NEXT_PUBLIC_OBJECT_STORAGE_ORIGIN` to the R2 S3 endpoint, and `MEDIA_SOURCE_ORIGINS` only when browsers must contact an approved licensed-media host directly.
 7. Keep automatic deployment disabled. Deploy the API first, then the web service, and confirm `/ready` before loading the web URL.
 8. Provision the single staging administrator interactively through an approved one-off local command pointed at the staging database; enroll MFA immediately. Never place an administrator password in Render environment variables.
 9. Upload only generated, owned, or verified public-domain clips small enough for the 50 MiB staging cap.

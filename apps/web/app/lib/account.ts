@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { forwardedGeoHeaders } from "@/app/lib/geo-headers";
+import { currentStorefrontOrigin } from "@/app/lib/public-origin";
 
 export type Plan = { id: string; code: string; name: string; description: string; price_cents: number; currency: string; interval: "month" | "year"; max_streams: number; max_resolution: string };
 export type AccountDashboard = {
@@ -17,11 +18,19 @@ export async function customerAccountFetch<T>(path: string, init?: RequestInit):
   const cookieStore = await cookies();
   const session = cookieStore.get("aperture_session");
   if (!session) redirect("/login");
+  const publicOrigin = await currentStorefrontOrigin();
+  const edgeSecret = process.env.CUSTOM_DOMAIN_EDGE_SECRET;
   const response = await fetch(`${process.env.API_ORIGIN ?? "http://localhost:8000"}${path}`, {
     ...init, cache: "no-store",
     headers: {
       "Content-Type": "application/json",
-      Origin: process.env.WEB_ORIGIN ?? "http://localhost:3000",
+      Origin: publicOrigin,
+      ...(edgeSecret
+        ? {
+            "X-Aperture-Public-Origin": publicOrigin,
+            "X-Aperture-Edge-Secret": edgeSecret,
+          }
+        : {}),
       cookie: `${session.name}=${session.value}`,
       ...(await forwardedGeoHeaders()),
       ...init?.headers,

@@ -6,6 +6,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.catalog_models import Country, Credit, Movie, Person, Series
+from app.catalog_visibility import exclude_legacy_test_fixtures, public_title_conditions
 from app.curation_models import Collection, CollectionKind, CurationStatus
 from app.homepage_schemas import HomepagePublicRail, HomepagePublicResponse, HomepageTitle
 from app.models import HomepageConfiguration, HomepageRail
@@ -70,8 +71,11 @@ def _title(record: Movie | Series) -> HomepageTitle:
         title=record.title,
         slug=record.slug,
         short_description=record.short_description,
+        release_date=record.release_date,
         maturity_rating=record.maturity_rating,
         runtime_minutes=record.runtime_minutes if isinstance(record, Movie) else None,
+        season_count=len(record.seasons) if isinstance(record, Series) else None,
+        genres=sorted(record.genres, key=lambda genre: (genre.name.casefold(), str(genre.id))),
         poster_url=record.poster_url,
         backdrop_url=record.backdrop_url,
         metadata_provider=record.metadata_provider,
@@ -101,7 +105,10 @@ def _pinned_records(
     for kind, model in (("movie", Movie), ("series", Series)):
         if not ids[kind]:
             continue
-        statement = select(model).where(model.id.in_(ids[kind]))
+        statement = select(model).options(selectinload(model.genres)).where(model.id.in_(ids[kind]))
+        if model is Series:
+            statement = statement.options(selectinload(Series.seasons))
+        statement = statement.where(*exclude_legacy_test_fixtures(model))
         if not preview:
             statement = statement.where(availability_clause(model, country=country))
         for record in db.scalars(statement):
@@ -127,7 +134,10 @@ def _dynamic(
         return []
     records: list[Movie | Series] = []
     for model in models:
-        statement = select(model)
+        statement = select(model).options(selectinload(model.genres))
+        if model is Series:
+            statement = statement.options(selectinload(Series.seasons))
+        statement = statement.where(*exclude_legacy_test_fixtures(model))
         if not preview:
             statement = statement.where(availability_clause(model, country=country))
         if query == "provider:tmdb":
@@ -215,14 +225,14 @@ def render_no_algorithm_homepage(db: Session, country: str | None = None) -> Hom
         db.scalars(
             select(Movie)
             .options(selectinload(Movie.genres))
-            .where(availability_clause(Movie, country=country))
+            .where(*public_title_conditions(Movie, country=country))
         ).unique()
     )
     series = list(
         db.scalars(
             select(Series)
-            .options(selectinload(Series.genres))
-            .where(availability_clause(Series, country=country))
+            .options(selectinload(Series.genres), selectinload(Series.seasons))
+            .where(*public_title_conditions(Series, country=country))
         ).unique()
     )
     titles: list[Movie | Series] = [*movies, *series]

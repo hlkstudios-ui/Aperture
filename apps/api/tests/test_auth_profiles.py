@@ -26,6 +26,7 @@ def test_customer_login_profile_switch_and_admin_isolation() -> None:
             },
         )
         assert registration.status_code == 201
+        assert "Domain=" not in registration.headers["set-cookie"]
         primary_id = registration.json()["active_profile_id"]
         invalid_timezone = client.patch(
             f"/profiles/{primary_id}",
@@ -69,6 +70,7 @@ def test_customer_login_profile_switch_and_admin_isolation() -> None:
         )
         assert login.status_code == 200
         assert login.headers["set-cookie"].startswith("aperture_session=")
+        assert "Domain=" not in login.headers["set-cookie"]
 
         reset_request = client.post("/auth/password-reset/request", json={"email": email})
         assert reset_request.status_code == 200

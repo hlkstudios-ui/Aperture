@@ -54,7 +54,7 @@ test("viewer manages device sessions and rotates a password without fake billing
   await expect(secondaryPage).toHaveURL(/\/profiles$/);
 
   await page.goto("/account");
-  await expect(page.getByRole("heading", { name: "Account & access" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "The projection ledger." })).toBeVisible();
   await expect(page.getByRole("heading", { name: "No active subscription" })).toBeVisible();
   await expect(page.getByText(/never simulates completed payment/i)).toBeVisible();
   await expect(page.getByText("Essential", { exact: true })).toBeVisible();

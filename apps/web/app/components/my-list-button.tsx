@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Collection } from "@/app/lib/curation";
-
-const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8000";
+import { apiGatewayPath } from "@/app/lib/api-gateway";
 
 export function MyListButton({ movieId, authenticated }: { movieId: string; authenticated: boolean }) {
   const router = useRouter();
@@ -13,14 +12,14 @@ export function MyListButton({ movieId, authenticated }: { movieId: string; auth
     if (!authenticated) { router.push("/login?next=my-list"); return; }
     setState("saving");
     try {
-      const response = await fetch(`${apiOrigin}/curation/my-lists`, { credentials: "include" });
+      const response = await fetch(apiGatewayPath("/curation/my-lists"), { credentials: "include" });
       if (response.status === 401) { setState("login"); return; }
       if (!response.ok) throw new Error("list unavailable");
       const lists = await response.json() as Collection[];
       const list = lists.find((item) => item.title === "My List");
       if (list?.items.some((item) => item.kind === "movie" && item.title_id === movieId)) { setState("saved"); return; }
       const items = [...(list?.items ?? []).map((item) => item.kind === "movie" ? { movie_id: item.title_id } : { series_id: item.title_id }), { movie_id: movieId }];
-      const saved = await fetch(`${apiOrigin}/curation/my-lists${list ? `/${list.id}` : ""}`, {
+      const saved = await fetch(apiGatewayPath(`/curation/my-lists${list ? `/${list.id}` : ""}`), {
         method: list ? "PUT" : "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: list?.title ?? "My List", description: list?.description ?? "Titles saved for this profile.", items }),
       });

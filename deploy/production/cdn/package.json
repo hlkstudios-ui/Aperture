@@ -2,6 +2,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "deploy": "wrangler deploy",
     "test": "node --test worker.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "4.127.1"
   }
 }

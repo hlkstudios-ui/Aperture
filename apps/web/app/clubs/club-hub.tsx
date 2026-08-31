@@ -1,7 +1,8 @@
 "use client";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-const api = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8000";
+import { API_GATEWAY_PREFIX } from "@/app/lib/api-gateway";
+const api = API_GATEWAY_PREFIX;
 type Movie = { id: string; title: string };
 type Club = {
   id: string;

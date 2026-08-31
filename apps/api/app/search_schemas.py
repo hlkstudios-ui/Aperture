@@ -19,11 +19,13 @@ class UniversalTitleResult(BaseModel):
     original_language_code: str | None
     studios: list[str]
     genres: list[str]
+    duration_minutes: int | None = None
+    is_ongoing: bool | None = None
     season_count: int = 0
     episode_count: int = 0
     href: str
     source: str = "local"
-    availability: str = "In the Aperture catalog"
+    availability: str = "Explore this title"
 
 
 class UniversalEntityResult(BaseModel):

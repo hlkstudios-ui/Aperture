@@ -1,4 +1,4 @@
-FROM node:20.19.5-bookworm-slim AS dependencies
+FROM node:24.20.0-bookworm-slim AS dependencies
 WORKDIR /workspace
 COPY package.json package-lock.json ./
 COPY apps/web/package.json ./apps/web/package.json
@@ -6,9 +6,10 @@ RUN npm ci
 
 FROM dependencies AS builder
 ARG API_ORIGIN=http://api:8000
-ARG NEXT_PUBLIC_API_ORIGIN
 ARG NEXT_PUBLIC_OBJECT_STORAGE_ORIGIN
-ARG NEXT_PUBLIC_MEDIA_ORIGIN
+ARG MEDIA_SOURCE_ORIGINS
+ARG CAPTCHA_REQUIRED=false
+ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY
 ARG NEXT_PUBLIC_FEATURE_SCENE_LENS_ENABLED=true
 ARG NEXT_PUBLIC_FEATURE_ASK_MOVIE_ENABLED=true
 ARG NEXT_PUBLIC_FEATURE_COMMUNITY_ENABLED=true
@@ -17,9 +18,10 @@ ARG NEXT_PUBLIC_FEATURE_EXPERIMENTAL_RECOMMENDATIONS_ENABLED=true
 ARG WEB_ORIGIN
 ARG POLICY_REQUIRE_APPROVED=false
 ENV API_ORIGIN=$API_ORIGIN \
-    NEXT_PUBLIC_API_ORIGIN=$NEXT_PUBLIC_API_ORIGIN \
     NEXT_PUBLIC_OBJECT_STORAGE_ORIGIN=$NEXT_PUBLIC_OBJECT_STORAGE_ORIGIN \
-    NEXT_PUBLIC_MEDIA_ORIGIN=$NEXT_PUBLIC_MEDIA_ORIGIN \
+    MEDIA_SOURCE_ORIGINS=$MEDIA_SOURCE_ORIGINS \
+    CAPTCHA_REQUIRED=$CAPTCHA_REQUIRED \
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY=$NEXT_PUBLIC_TURNSTILE_SITE_KEY \
     NEXT_PUBLIC_FEATURE_SCENE_LENS_ENABLED=$NEXT_PUBLIC_FEATURE_SCENE_LENS_ENABLED \
     NEXT_PUBLIC_FEATURE_ASK_MOVIE_ENABLED=$NEXT_PUBLIC_FEATURE_ASK_MOVIE_ENABLED \
     NEXT_PUBLIC_FEATURE_COMMUNITY_ENABLED=$NEXT_PUBLIC_FEATURE_COMMUNITY_ENABLED \
@@ -28,14 +30,17 @@ ENV API_ORIGIN=$API_ORIGIN \
     WEB_ORIGIN=$WEB_ORIGIN \
     POLICY_REQUIRE_APPROVED=$POLICY_REQUIRE_APPROVED
 COPY apps/web ./apps/web
+# The web type-check includes e2e-runtime-safety.test.ts, which imports only
+# these two shared E2E safety modules. Keep this allowlist narrow so no other
+# root-level test fixtures (or local configuration) enter the builder.
+COPY tests/e2e/global-setup.ts tests/e2e/safety.ts ./tests/e2e/
 RUN npm run build:web
 
-FROM node:20.19.5-bookworm-slim AS runtime
+FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:774b7d020b24214835769e24c3544835526cd0288f0b094eae48e8b2c2429a79 AS runtime
 ENV NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3000
-RUN groupadd --system aperture && useradd --system --gid aperture --home-dir /app aperture
 WORKDIR /app
-COPY --from=builder --chown=aperture:aperture /workspace/apps/web/.next/standalone ./
-COPY --from=builder --chown=aperture:aperture /workspace/apps/web/.next/static ./apps/web/.next/static
-USER aperture
+COPY --from=builder --chown=65532:65532 /workspace/apps/web/.next/standalone ./
+COPY --from=builder --chown=65532:65532 /workspace/apps/web/.next/static ./apps/web/.next/static
+USER nonroot
 EXPOSE 3000
-CMD ["node", "apps/web/server.js"]
+CMD ["apps/web/server.js"]

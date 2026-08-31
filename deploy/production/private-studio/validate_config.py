@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parent
 DEFAULT_INPUT = ROOT.parents[2] / ".env"
 REQUIRED = {
+    "CADDY_IMAGE",
     "PUBLIC_APP_ORIGIN",
     "PUBLIC_APP_HOST",
     "ORIGIN_EDGE_SECRET",
@@ -14,6 +15,19 @@ REQUIRED = {
     "TAILSCALE_AUTH_KEY",
     "TAILSCALE_OWNER_EMAIL",
 }
+
+
+def image_reference(value: str) -> str:
+    if "@sha256:" not in value or any(character.isspace() for character in value):
+        raise ValueError("CADDY_IMAGE must be an immutable registry digest reference")
+    repository, digest = value.rsplit("@sha256:", 1)
+    if "/" not in repository or repository.lower() != repository:
+        raise ValueError("CADDY_IMAGE must include a lowercase registry/repository")
+    if len(digest) != 64 or any(
+        character not in "0123456789abcdef" for character in digest
+    ):
+        raise ValueError("CADDY_IMAGE must include a sha256 digest")
+    return value
 
 
 def load(path: Path = DEFAULT_INPUT) -> dict[str, str]:
@@ -34,6 +48,7 @@ def load(path: Path = DEFAULT_INPUT) -> dict[str, str]:
 
 
 def validate(values: dict[str, str], *, deploy: bool) -> None:
+    image_reference(values["CADDY_IMAGE"])
     parsed = urlsplit(values["PUBLIC_APP_ORIGIN"])
     if parsed.scheme != "https" or not parsed.hostname or parsed.path not in {"", "/"}:
         raise ValueError("PUBLIC_APP_ORIGIN must be an HTTPS origin without a path")
@@ -51,7 +66,9 @@ def validate(values: dict[str, str], *, deploy: bool) -> None:
             raise ValueError("ORIGIN_EDGE_SECRET must contain at least 48 characters")
         if values["ORIGIN_EDGE_SECRET"] == values["STUDIO_EDGE_SECRET"]:
             raise ValueError("origin and Studio edge secrets must be independent")
-        if not values["TAILSCALE_AUTH_KEY"].startswith("tskey-"):
+        if values["TAILSCALE_AUTH_KEY"] and not values["TAILSCALE_AUTH_KEY"].startswith(
+            "tskey-"
+        ):
             raise ValueError("TAILSCALE_AUTH_KEY is not a Tailscale enrollment key")
 
 

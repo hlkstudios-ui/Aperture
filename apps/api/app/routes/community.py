@@ -6,6 +6,7 @@ from sqlalchemy import delete, func, or_, select
 
 from app.auth import DbSession, require_customer_session, require_trusted_origin
 from app.catalog_models import Movie
+from app.catalog_visibility import exclude_legacy_test_fixtures, public_title_conditions
 from app.community_models import (
     CommunityActivity,
     CommunityActivityKind,
@@ -36,7 +37,6 @@ from app.geo import OptionalViewerCountry
 from app.models import DeviceSession, Profile
 from app.rate_limit import enforce_rate_limit
 from app.routes.recommendations import active_profile
-from app.scheduling import availability_clause
 
 router = APIRouter(
     prefix="/community",
@@ -48,7 +48,10 @@ CurrentSession = Annotated[DeviceSession, Depends(require_customer_session)]
 
 def available_movie(db: DbSession, movie_id: uuid.UUID, country: str | None) -> Movie:
     movie = db.scalar(
-        select(Movie).where(Movie.id == movie_id, availability_clause(Movie, country=country))
+        select(Movie).where(
+            Movie.id == movie_id,
+            *public_title_conditions(Movie, country=country),
+        )
     )
     if movie is None:
         raise HTTPException(404, "Movie was not found")
@@ -129,7 +132,13 @@ async def put_review(
 def my_reviews(db: DbSession, session: CurrentSession) -> list[ReviewResponse]:
     profile = active_profile(db, session)
     records = db.scalars(
-        select(Review).where(Review.profile_id == profile.id).order_by(Review.updated_at.desc())
+        select(Review)
+        .join(Movie, Review.movie_id == Movie.id)
+        .where(
+            Review.profile_id == profile.id,
+            *exclude_legacy_test_fixtures(Movie),
+        )
+        .order_by(Review.updated_at.desc())
     )
     return [review_response(db, review) for review in records]
 
@@ -207,7 +216,10 @@ def public_lists(
             Collection.updated_at.desc(), Collection.id
         )
     )
-    return [collection_response(db, load_collection(db, record.id), country) for record in records]
+    responses = [
+        collection_response(db, load_collection(db, record.id), country) for record in records
+    ]
+    return [response for response in responses if response.items]
 
 
 @router.get("/lists/{slug}", response_model=CollectionResponse)
@@ -223,12 +235,18 @@ def public_list(
     )
     if record is None:
         raise HTTPException(404, "List was not found")
-    return collection_response(db, load_collection(db, record.id), country)
+    response = collection_response(db, load_collection(db, record.id), country)
+    if not response.items:
+        raise HTTPException(404, "List was not found")
+    return response
 
 
 @router.post("/reports", response_model=ReportResponse, status_code=status.HTTP_201_CREATED)
 async def report_content(
-    payload: ReportWrite, db: DbSession, session: CurrentSession
+    payload: ReportWrite,
+    db: DbSession,
+    session: CurrentSession,
+    country: OptionalViewerCountry,
 ) -> CommunityReport:
     profile = active_profile(db, session)
     await enforce_rate_limit(f"community:report:{profile.id}", limit=10, window_seconds=3600)
@@ -236,6 +254,7 @@ async def report_content(
         review = db.get(Review, payload.review_id)
         if review is None or review.status != ModerationStatus.approved:
             raise HTTPException(404, "Review was not found")
+        available_movie(db, review.movie_id, country)
         if review.profile_id == profile.id:
             raise HTTPException(422, "You cannot report your own review")
     if payload.collection_id:
@@ -246,6 +265,8 @@ async def report_content(
             or collection.visibility != "public"
             or collection.moderation_status != ModerationStatus.approved.value
         ):
+            raise HTTPException(404, "List was not found")
+        if not collection_response(db, load_collection(db, collection.id), country).items:
             raise HTTPException(404, "List was not found")
         if collection.owner_profile_id == profile.id:
             raise HTTPException(422, "You cannot report your own list")
@@ -388,7 +409,11 @@ def unfollow_profile(
 
 
 @router.get("/activity", response_model=list[ActivityResponse])
-def activity_feed(db: DbSession, session: CurrentSession) -> list[ActivityResponse]:
+def activity_feed(
+    db: DbSession,
+    session: CurrentSession,
+    country: OptionalViewerCountry,
+) -> list[ActivityResponse]:
     profile = active_profile(db, session)
     followed = set(
         db.scalars(
@@ -413,6 +438,16 @@ def activity_feed(db: DbSession, session: CurrentSession) -> list[ActivityRespon
             review = db.get(Review, activity.review_id)
             if review is None or review.status != ModerationStatus.approved:
                 continue
+            if (
+                db.scalar(
+                    select(Movie.id).where(
+                        Movie.id == review.movie_id,
+                        *public_title_conditions(Movie, country=country),
+                    )
+                )
+                is None
+            ):
+                continue
         if activity.collection_id:
             collection = db.get(Collection, activity.collection_id)
             if (
@@ -420,6 +455,8 @@ def activity_feed(db: DbSession, session: CurrentSession) -> list[ActivityRespon
                 or collection.visibility != "public"
                 or collection.moderation_status != ModerationStatus.approved.value
             ):
+                continue
+            if not collection_response(db, load_collection(db, collection.id), country).items:
                 continue
         if activity.target_profile_id in hidden:
             continue

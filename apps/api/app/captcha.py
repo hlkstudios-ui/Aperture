@@ -1,3 +1,5 @@
+from urllib.parse import urlsplit
+
 import httpx
 from fastapi import HTTPException, Request, status
 
@@ -41,3 +43,13 @@ async def verify_captcha(token: str | None, request: Request) -> None:
         ) from error
     if not result.get("success"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Security verification failed; try again")
+    expected_origin = request.headers.get("x-aperture-public-origin") or request.headers.get(
+        "origin"
+    )
+    expected_hostname = urlsplit(expected_origin).hostname if expected_origin else None
+    verified_hostname = str(result.get("hostname") or "").rstrip(".").lower()
+    if not expected_hostname or verified_hostname != expected_hostname.rstrip(".").lower():
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Security verification was issued for a different storefront",
+        )

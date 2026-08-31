@@ -9,7 +9,9 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent
-CREDENTIALS = ROOT / "credentials.local.env"
+PROJECT_ROOT = ROOT.parents[2]
+DEFAULT_INPUT = PROJECT_ROOT / ".env"
+EXAMPLE_INPUT = ROOT / "credentials.example.env"
 APP_TEMPLATE = ROOT / "app.template.yaml"
 APP_OUTPUT = ROOT / "app.local.yaml"
 OWNER_KEYS = {
@@ -31,6 +33,22 @@ OWNER_KEYS = {
     "CDN_ORIGIN_SECRET",
     "GEO_ASSERTION_SECRET",
     "GEO_EDGE_ORIGIN_WEB",
+    "OAUTH_GOOGLE_CLIENT_ID",
+    "OAUTH_GOOGLE_CLIENT_SECRET",
+    "OAUTH_MICROSOFT_CLIENT_ID",
+    "OAUTH_MICROSOFT_CLIENT_SECRET",
+    "OAUTH_GITHUB_CLIENT_ID",
+    "OAUTH_GITHUB_CLIENT_SECRET",
+    "OAUTH_APPLE_CLIENT_ID",
+    "OAUTH_APPLE_CLIENT_SECRET",
+    "CAPTCHA_REQUIRED",
+    "NEXT_PUBLIC_TURNSTILE_SITE_KEY",
+    "TURNSTILE_SECRET_KEY",
+    "BRAND_AI_PROVIDER",
+    "BRAND_AI_MODEL",
+    "BRAND_AI_TIMEOUT_SECONDS",
+    "BRAND_AI_RATE_LIMIT_PER_HOUR",
+    "OPENAI_API_KEY",
     "FEATURE_SCENE_LENS_ENABLED",
     "FEATURE_ASK_MOVIE_ENABLED",
     "FEATURE_COMMUNITY_ENABLED",
@@ -54,23 +72,31 @@ OWNER_KEYS = {
     "RECOVERY_POINT_OBJECTIVE_HOURS",
     "RECOVERY_TIME_OBJECTIVE_HOURS",
 }
+OAUTH_PAIRS = (
+    ("OAUTH_GOOGLE_CLIENT_ID", "OAUTH_GOOGLE_CLIENT_SECRET"),
+    ("OAUTH_MICROSOFT_CLIENT_ID", "OAUTH_MICROSOFT_CLIENT_SECRET"),
+    ("OAUTH_GITHUB_CLIENT_ID", "OAUTH_GITHUB_CLIENT_SECRET"),
+    ("OAUTH_APPLE_CLIENT_ID", "OAUTH_APPLE_CLIENT_SECRET"),
+)
 DO_BINDABLES = {
     "aperture-postgres.DATABASE_PRIVATE_URL",
     "aperture-valkey.REDIS_URL",
 }
 
 
-def load_values() -> dict[str, str]:
+def load_values(path: Path = DEFAULT_INPUT) -> dict[str, str]:
     values: dict[str, str] = {}
-    for line_number, raw in enumerate(CREDENTIALS.read_text().splitlines(), 1):
+    for line_number, raw in enumerate(path.read_text().splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         if "=" not in line:
-            raise ValueError(f"invalid credentials.local.env line {line_number}")
+            raise ValueError(f"invalid dotenv line {line_number}")
         key, value = line.split("=", 1)
         if key not in OWNER_KEYS:
-            raise ValueError(f"unknown credential label: {key}")
+            continue
+        if key in values:
+            raise ValueError(f"duplicate credential label: {key}")
         values[key] = value
     missing = sorted(OWNER_KEYS - values.keys())
     if missing:
@@ -79,6 +105,7 @@ def load_values() -> dict[str, str]:
 
 
 def validate_deploy_values(values: dict[str, str]) -> None:
+    validate_auth_values(values)
     dummy = sorted(key for key, value in values.items() if "DUMMY" in value)
     if dummy:
         raise ValueError("replace dummy labels before deploy: " + ", ".join(dummy))
@@ -112,6 +139,35 @@ def validate_deploy_values(values: dict[str, str]) -> None:
         raise ValueError("MALWARE_SCANNER_PORT must be between 1 and 65535")
 
 
+def validate_auth_values(values: dict[str, str]) -> None:
+    if values["CAPTCHA_REQUIRED"] not in {"true", "false"}:
+        raise ValueError("CAPTCHA_REQUIRED must be true or false")
+    if values["CAPTCHA_REQUIRED"] == "true" and not all(
+        values[key] for key in ("NEXT_PUBLIC_TURNSTILE_SITE_KEY", "TURNSTILE_SECRET_KEY")
+    ):
+        raise ValueError(
+            "CAPTCHA_REQUIRED requires both NEXT_PUBLIC_TURNSTILE_SITE_KEY "
+            "and TURNSTILE_SECRET_KEY"
+        )
+    for client_id, client_secret in OAUTH_PAIRS:
+        if bool(values[client_id]) != bool(values[client_secret]):
+            raise ValueError(f"{client_id} and {client_secret} must be configured together")
+    if values["BRAND_AI_PROVIDER"] not in {"disabled", "openai"}:
+        raise ValueError("BRAND_AI_PROVIDER must be disabled or openai")
+    if values["BRAND_AI_PROVIDER"] == "openai" and not values["OPENAI_API_KEY"]:
+        raise ValueError("BRAND_AI_PROVIDER=openai requires OPENAI_API_KEY")
+    if values["BRAND_AI_MODEL"].startswith("ft:"):
+        raise ValueError("BRAND_AI_MODEL must not use a fine-tuned model")
+    if not values["BRAND_AI_TIMEOUT_SECONDS"].isdigit() or not 3 <= int(
+        values["BRAND_AI_TIMEOUT_SECONDS"]
+    ) <= 30:
+        raise ValueError("BRAND_AI_TIMEOUT_SECONDS must be between 3 and 30")
+    if not values["BRAND_AI_RATE_LIMIT_PER_HOUR"].isdigit() or not 1 <= int(
+        values["BRAND_AI_RATE_LIMIT_PER_HOUR"]
+    ) <= 120:
+        raise ValueError("BRAND_AI_RATE_LIMIT_PER_HOUR must be between 1 and 120")
+
+
 def render(template: str, values: dict[str, str]) -> str:
     def replacement(match: re.Match[str]) -> str:
         key = match.group(1)
@@ -130,23 +186,43 @@ def write_private(path: Path, content: str) -> None:
 
 
 def render_app(values: dict[str, str]) -> str:
+    validate_auth_values(values)
     document = yaml.safe_load(render(APP_TEMPLATE.read_text(), values))
     api_envs = document.pop("x-api-envs")
+    api_auth_envs = document.pop("x-api-auth-envs")
+    optional_api_keys = {
+        "TURNSTILE_SECRET_KEY",
+        "OPENAI_API_KEY",
+        *(label for pair in OAUTH_PAIRS for label in pair),
+    }
+    api_auth_envs = [
+        item
+        for item in api_auth_envs
+        if item["key"] not in optional_api_keys or values[item["key"]]
+    ]
     backup_envs = document.pop("x-backup-envs")
     api_jobs = [item for item in document["jobs"] if item["name"] != "postgres-backup"]
-    for component in [*api_jobs, document["services"][0], *document["workers"]]:
+    for component in [*api_jobs, *document["workers"]]:
         component["envs"] = copy.deepcopy(api_envs)
+    api = next(item for item in document["services"] if item["name"] == "api")
+    api["envs"] = copy.deepcopy([*api_envs, *api_auth_envs])
     next(item for item in document["jobs"] if item["name"] == "postgres-backup")[
         "envs"
     ] = copy.deepcopy(backup_envs)
+    web = next(item for item in document["services"] if item["name"] == "web")
+    if not values["NEXT_PUBLIC_TURNSTILE_SITE_KEY"]:
+        web["envs"] = [
+            item for item in web["envs"] if item["key"] != "NEXT_PUBLIC_TURNSTILE_SITE_KEY"
+        ]
     return yaml.safe_dump(document, sort_keys=False)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=("dummy", "deploy"), default="dummy")
+    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     args = parser.parse_args()
-    values = load_values()
+    values = load_values(args.input)
     if args.mode == "deploy":
         validate_deploy_values(values)
     write_private(APP_OUTPUT, render_app(values))

@@ -30,7 +30,12 @@ services:
       - { key: SMTP_FROM_EMAIL, sync: false }
       - { key: SMTP_STARTTLS, value: "true" }
       - { key: ERROR_TRACKING_DSN, sync: false }
-      - { key: BILLING_PROVIDER, value: staging_unconfigured }
+      - { key: BRAND_AI_PROVIDER, sync: false }
+      - { key: BRAND_AI_MODEL, sync: false }
+      - { key: BRAND_AI_TIMEOUT_SECONDS, sync: false }
+      - { key: BRAND_AI_RATE_LIMIT_PER_HOUR, sync: false }
+      - { key: OPENAI_API_KEY, sync: false }
+      - { key: BILLING_PROVIDER, value: disabled }
       - { key: MALWARE_SCANNER_MODE, value: eicar }
       - { key: MEDIA_DELIVERY_MODE, value: api_proxy }
       - { key: UPLOAD_MAX_BYTES, value: "52428800" }
@@ -49,11 +54,10 @@ services:
     healthCheckPath: /
     autoDeployTrigger: "off"
     envVars:
-      - { key: NODE_VERSION, value: 20.19.5 }
+      - { key: NODE_VERSION, value: 24.20.0 }
       - { key: API_ORIGIN, sync: false }
-      - { key: NEXT_PUBLIC_API_ORIGIN, sync: false }
       - { key: NEXT_PUBLIC_OBJECT_STORAGE_ORIGIN, sync: false }
-      - { key: NEXT_PUBLIC_MEDIA_ORIGIN, sync: false }
+      - { key: MEDIA_SOURCE_ORIGINS, sync: false }
       - { key: WEB_ORIGIN, sync: false }
       - { key: POLICY_REQUIRE_APPROVED, value: "false" }
       - { key: NEXT_PUBLIC_FEATURE_SCENE_LENS_ENABLED, sync: false }

@@ -1,11 +1,29 @@
 name = "aperture-protected-media"
 main = "worker.js"
 compatibility_date = "2026-08-01"
+workers_dev = false
+preview_urls = false
 
 [vars]
 ORIGIN_API = "https://DUMMY_watch.example.com/api"
 WEB_ORIGIN = "https://DUMMY_watch.example.com"
 TOKEN_TTL_SECONDS = "300"
+# Custom-origin CORS stays fail-closed until this is explicitly changed to true
+# and the shared SITE_DOMAINS namespace below is populated and uncommented.
+CUSTOM_DOMAINS_ENABLED = "false"
+
+# Bind the same production namespace to the geo and protected-media Workers.
+# Each key is hostname:<lowercase-hostname>; each value is JSON such as
+# {"hostname":"watch.customer.example","status":"active"}.
+# [[kv_namespaces]]
+# binding = "SITE_DOMAINS"
+# id = "DUMMY_PRODUCTION_SITE_DOMAINS_NAMESPACE_ID"
+# preview_id = "DUMMY_PREVIEW_SITE_DOMAINS_NAMESPACE_ID"
+
+# In the private configuration/dashboard, map CDN_HOSTNAME to this script as a
+# Worker Custom Domain. Keep a separate no-script CDN_HOSTNAME/* zone-route
+# exclusion so the geo Worker's */* route does not intercept the custom domain.
+# cloudflare_saas_preflight.py verifies both boundaries before readiness is attested.
 
 # Add CDN_SIGNING_SECRET and CDN_ORIGIN_SECRET with `wrangler secret put`.
 # Use the exact values injected into the Hostinger API service; never commit them.

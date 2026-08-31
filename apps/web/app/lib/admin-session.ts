@@ -1,10 +1,11 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import { studioEdgeHeaders } from "@/app/lib/studio-edge";
 
 type AdminSession = { id: string; email: string; mfa_enabled: boolean };
 
-export async function requireAdminSession(): Promise<AdminSession> {
+export const requireAdminSession = cache(async (): Promise<AdminSession> => {
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get("aperture_admin_session");
   if (!sessionCookie) redirect("/studio/login");
@@ -21,4 +22,4 @@ export async function requireAdminSession(): Promise<AdminSession> {
   }
   if (!response.ok) redirect("/studio/login?error=session-expired");
   return response.json() as Promise<AdminSession>;
-}
+});

@@ -5,6 +5,7 @@ import { SearchAnalytics } from "@/app/components/search-analytics";
 import { PersistentSearchForm } from "@/app/components/persistent-search-form";
 import { ResponsivePoster } from "@/app/components/responsive-poster";
 import { catalogFetch } from "@/app/lib/catalog";
+import { getSiteBrand } from "@/app/lib/site-brand-server";
 
 type SearchTitle = {
   id: string;
@@ -54,6 +55,7 @@ export default async function SearchPage({
   searchParams: Promise<{ q?: string | string[]; page?: string | string[] }>;
 }) {
   const params = await searchParams;
+  const brand = await getSiteBrand();
   const analyticsEnabled = Boolean((await cookies()).get("aperture_session"));
   const query = typeof params.q === "string" ? params.q.trim() : "";
   const requestedPage =
@@ -78,7 +80,7 @@ export default async function SearchPage({
       />
       <SiteHeader />
       <header className="search-heading universal-search-heading">
-        <p className="eyebrow">Search the entire Aperture universe</p>
+        <p className="eyebrow">Search the entire {brand.short_name} universe</p>
         <h1>Find anything.</h1>
         <p>
           Titles, original names, cast, characters, studios, episodes, genres,
@@ -108,7 +110,6 @@ export default async function SearchPage({
         <div className="universal-search-results">
           <header>
             <div>
-              <p className="eyebrow">Complete database search</p>
               <h2>{results.total_titles} titles found</h2>
             </div>
             <span>

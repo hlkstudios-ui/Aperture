@@ -5,6 +5,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.catalog_models import Movie, Series
+from app.catalog_visibility import public_title_conditions
 from app.curation_models import (
     Collection,
     CollectionItem,
@@ -20,7 +21,6 @@ from app.curation_schemas import (
     TitleCard,
 )
 from app.models import Profile
-from app.scheduling import availability_clause
 
 
 def title_card(
@@ -33,7 +33,7 @@ def title_card(
         (Movie, item.movie_id, "movie") if item.movie_id else (Series, item.series_id, "series")
     )
     record = db.scalar(
-        select(model).where(model.id == title_id, availability_clause(model, country=country))
+        select(model).where(model.id == title_id, *public_title_conditions(model, country=country))
     )
     if record is None:
         return None
@@ -78,6 +78,8 @@ def journey_response(
     journey: Journey,
     profile_id: uuid.UUID | None = None,
     country: str | None = None,
+    *,
+    include_empty_chapters: bool = False,
 ) -> JourneyResponse:
     item_ids = [item.id for chapter in journey.chapters for item in chapter.items]
     completed = (
@@ -97,14 +99,15 @@ def journey_response(
         cards = [
             card for item in chapter.items if (card := title_card(db, item, completed, country))
         ]
-        chapters.append(
-            JourneyChapterResponse(
-                title=chapter.title,
-                introduction=chapter.introduction,
-                position=chapter.position,
-                items=cards,
+        if cards or include_empty_chapters:
+            chapters.append(
+                JourneyChapterResponse(
+                    title=chapter.title,
+                    introduction=chapter.introduction,
+                    position=chapter.position,
+                    items=cards,
+                )
             )
-        )
     visible_ids = {
         item.id
         for chapter in journey.chapters

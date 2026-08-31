@@ -8,7 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-MIGRATION_HEAD = "b7e4c91d2a60"
+MIGRATION_HEAD = "20260830_0032"
+RECORD_VERSION = 2
 IMAGE_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 REQUIRED_GATES = {
     "production_admin": {"admin_mfa_enrollment", "recovery_login", "admin_acceptance"},
@@ -69,13 +70,37 @@ def validate_release(record: dict[str, Any], *, dummy: bool) -> None:
     if release.get("migration_head") != MIGRATION_HEAD:
         raise EvidenceError(f"release.migration_head must equal {MIGRATION_HEAD}")
     digests = mapping(release.get("image_digests"), "release.image_digests")
-    components = {"web", "api", "media_worker", "scene_worker", "backup"}
+    components = {
+        "web",
+        "api",
+        "media_worker",
+        "scene_worker",
+        "backup",
+        "caddy",
+        "storage",
+        "node_exporter",
+        "blackbox",
+    }
     if set(digests) != components:
         raise EvidenceError("release.image_digests must match the complete release component set")
     for component in sorted(components):
         digest = text(digests.get(component), f"release.image_digests.{component}", dummy=dummy)
         if not dummy and not IMAGE_DIGEST.fullmatch(digest):
             raise EvidenceError(f"release.image_digests.{component} must be a sha256 digest")
+    if digests["scene_worker"] != digests["api"]:
+        raise EvidenceError("release Scene worker must bind to the API image digest")
+    artifacts = (
+        "api",
+        "media_worker",
+        "web",
+        "backup",
+        "caddy",
+        "storage",
+        "node_exporter",
+        "blackbox",
+    )
+    if len({digests[component] for component in artifacts}) != len(artifacts):
+        raise EvidenceError("release artifact image digests must be distinct")
 
 
 def validate_gate(name: str, gate: Any, *, dummy: bool) -> bool:
@@ -107,8 +132,8 @@ def validate_gate(name: str, gate: Any, *, dummy: bool) -> bool:
 
 def validate(record: Any, *, dummy: bool) -> dict[str, Any]:
     root = mapping(record, "record")
-    if root.get("record_version") != 1:
-        raise EvidenceError("record_version must equal 1")
+    if root.get("record_version") != RECORD_VERSION:
+        raise EvidenceError(f"record_version must equal {RECORD_VERSION}")
     expected_environment = "dummy" if dummy else "production"
     if root.get("environment") != expected_environment:
         raise EvidenceError(f"environment must equal {expected_environment}")

@@ -9,7 +9,8 @@ describe("policy publication boundary", () => {
     expect(approvedPolicy("privacy")).toBeUndefined();
     render(<SiteFooter />);
     expect(screen.queryByRole("navigation", { name: "Policies" })).not.toBeInTheDocument();
-    expect(screen.getByText("Policy documents appear only after accountable owner approval."))
-      .toBeInTheDocument();
+    expect(screen.queryByText("Policy documents appear only after accountable owner approval."))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /credits/i })).not.toBeInTheDocument();
   });
 });

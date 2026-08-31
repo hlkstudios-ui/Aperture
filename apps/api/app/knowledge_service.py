@@ -2,6 +2,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.catalog_models import (
+    CatalogStatus,
     Character,
     Company,
     Country,
@@ -16,6 +17,7 @@ from app.catalog_models import (
     TitleRelationship,
 )
 from app.catalog_service import movie_query
+from app.catalog_visibility import public_title_conditions
 from app.knowledge_schemas import (
     CreditDestination,
     CreditTitle,
@@ -23,7 +25,6 @@ from app.knowledge_schemas import (
     KnowledgeEdge,
     KnowledgeNode,
 )
-from app.scheduling import availability_clause
 
 
 def film_graph(db: Session, movie: Movie, country: str | None = None) -> FilmKnowledgeGraph:
@@ -64,7 +65,7 @@ def film_graph(db: Session, movie: Movie, country: str | None = None) -> FilmKno
                 movie_query().where(
                     Movie.franchise_id == franchise.id,
                     Movie.id != movie.id,
-                    availability_clause(Movie, country=country),
+                    *public_title_conditions(Movie, country=country),
                 )
             ).unique()
             for item in related:
@@ -153,7 +154,7 @@ def film_graph(db: Session, movie: Movie, country: str | None = None) -> FilmKno
             related_movie = db.scalar(
                 movie_query().where(
                     Movie.id == related_credit.movie_id,
-                    availability_clause(Movie, country=country),
+                    *public_title_conditions(Movie, country=country),
                 )
             )
             person = db.get(Person, related_credit.person_id)
@@ -191,7 +192,10 @@ def film_graph(db: Session, movie: Movie, country: str | None = None) -> FilmKno
             else relationship.source_movie_id
         )
         other = db.scalar(
-            movie_query().where(Movie.id == other_id, availability_clause(Movie, country=country))
+            movie_query().where(
+                Movie.id == other_id,
+                *public_title_conditions(Movie, country=country),
+            )
         )
         if other is None:
             continue
@@ -236,7 +240,7 @@ def credit_destination(
             movie = db.scalar(
                 movie_query().where(
                     Movie.id == credit.movie_id,
-                    availability_clause(Movie, country=country),
+                    *public_title_conditions(Movie, country=country),
                 )
             )
             if movie:
@@ -254,7 +258,7 @@ def credit_destination(
             series = db.scalar(
                 select(Series).where(
                     Series.id == credit.series_id,
-                    availability_clause(Series, country=country),
+                    *public_title_conditions(Series, country=country),
                 )
             )
             if series:
@@ -275,7 +279,8 @@ def credit_destination(
                 .join(Series, Season.series_id == Series.id)
                 .where(
                     Episode.id == credit.episode_id,
-                    availability_clause(Series, country=country),
+                    Episode.status == CatalogStatus.published,
+                    *public_title_conditions(Series, country=country),
                 )
             ).one_or_none()
             if result:

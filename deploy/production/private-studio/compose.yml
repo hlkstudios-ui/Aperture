@@ -1,11 +1,14 @@
 services:
   studio-gateway:
-    image: caddy:2.10.2-alpine
+    image: ${CADDY_IMAGE}
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080"
-    env_file:
-      - ../../../.env
+    environment:
+      PUBLIC_APP_ORIGIN: "${PUBLIC_APP_ORIGIN}"
+      PUBLIC_APP_HOST: "${PUBLIC_APP_HOST}"
+      ORIGIN_EDGE_SECRET: "${ORIGIN_EDGE_SECRET}"
+      STUDIO_EDGE_SECRET: "${STUDIO_EDGE_SECRET}"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     read_only: true
@@ -14,5 +17,6 @@ services:
     cap_drop:
       - ALL
     tmpfs:
-      - /config:size=16m,mode=0700
-      - /data:size=16m,mode=0700
+      - "/tmp:size=16m,mode=0700,uid=65532,gid=65532"
+      - "/config:size=16m,mode=0700,uid=65532,gid=65532"
+      - "/data:size=16m,mode=0700,uid=65532,gid=65532"

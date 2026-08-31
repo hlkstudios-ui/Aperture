@@ -4,14 +4,15 @@ The sign-in screen is complete and runs locally in CAPTCHA test mode. OAuth butt
 
 ## Callback URLs
 
-Use the API origin—not the website origin—when registering callbacks:
+Use the website origin and same-origin gateway when registering callbacks:
 
-- Google: `http://localhost:8000/auth/oauth/google/callback`
-- Microsoft: `http://localhost:8000/auth/oauth/microsoft/callback`
-- GitHub: `http://localhost:8000/auth/oauth/github/callback`
-- Apple: `http://localhost:8000/auth/oauth/apple/callback`
+- Google: `http://localhost:3000/api/gateway/auth/oauth/google/callback`
+- Microsoft: `http://localhost:3000/api/gateway/auth/oauth/microsoft/callback`
+- GitHub: `http://localhost:3000/api/gateway/auth/oauth/github/callback`
+- Apple: `https://your-local-tls-host/api/gateway/auth/oauth/apple/callback`
 
-Replace `http://localhost:8000` with the public HTTPS API origin when deploying.
+Replace the example host with the storefront's public HTTPS origin when deploying. Apple uses
+a cross-site form POST and therefore requires HTTPS during integration testing as well.
 
 ## Values to add to `.env`
 
@@ -43,3 +44,6 @@ CAPTCHA_TEST_MODE=false
 3. Restrict the Turnstile widget to the deployed website hostname.
 4. Set `CAPTCHA_TEST_MODE=false`; application startup rejects test mode when CAPTCHA is enabled outside development.
 5. Keep all client secrets server-side. Only the Turnstile site key is intentionally public.
+6. The Hostinger and DigitalOcean deployment validators reject one-sided OAuth pairs and
+   reject CAPTCHA-enabled releases missing either Turnstile half. They also keep customer
+   cookies host-only behind the same-origin gateway.

@@ -30,6 +30,8 @@ from app.schemas import (
     ProfileResponse,
     RegisterRequest,
 )
+from app.site_brand_service import public_response as public_brand_response
+from app.site_domain_service import resolve_request_public_origin
 
 router = APIRouter(
     prefix="/auth", tags=["customer authentication"], dependencies=[Depends(require_trusted_origin)]
@@ -215,7 +217,13 @@ async def request_password_reset(
             development_token = raw_token
         else:
             try:
-                await send_password_reset(user.email, raw_token)
+                brand = public_brand_response(db)
+                await send_password_reset(
+                    user.email,
+                    raw_token,
+                    brand.short_name,
+                    resolve_request_public_origin(db, request),
+                )
             except RuntimeError as error:
                 db.rollback()
                 raise HTTPException(

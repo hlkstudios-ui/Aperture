@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete, select
 
 from app.auth import hash_password
-from app.catalog_models import CatalogStatus, Character, Credit, Movie, Person
+from app.catalog_models import CatalogStatus, Character, Credit, Language, Movie, Person
 from app.config import get_settings
 from app.db import SessionLocal
 from app.main import app
@@ -57,11 +57,15 @@ The harbor answers.
     admin_email = f"playback-admin-{token}@example.com"
     viewer_email = f"playback-viewer-{token}@example.com"
     password = "PlaybackAdministrator123"
+    english_locale_created = False
     with SessionLocal() as db:
+        if db.get(Language, "en") is None:
+            db.add(Language(code="en", name="English"))
+            english_locale_created = True
         admin = Admin(email=admin_email, password_hash=hash_password(password))
         movie = Movie(
             title=f"Playback Fixture {token}",
-            slug=f"playback-fixture-{token}",
+            slug=f"secure-playback-film-{token}",
             short_description="A secure playback integration fixture.",
             synopsis="Original test metadata.",
             runtime_minutes=1,
@@ -509,6 +513,13 @@ The harbor answers.
         assert config.json()["caption_size"] == "large"
         assert config.json()["caption_background"] == "solid"
         assert config.json()["caption_position"] == "top"
+        assert config.json()["manifest_url"] == (
+            f"/playback/sources/{source_id}/media/master.m3u8"
+        )
+        assert all(
+            track["url"].startswith(f"/playback/sources/{source_id}/media/")
+            for track in config.json()["subtitle_tracks"]
+        )
         knowledge = viewer.get(f"/catalog/movies/{slug}/knowledge-graph")
         assert knowledge.status_code == 200, knowledge.text
         assert knowledge.json()["derived_from"] == "normalized_verified_catalog"
@@ -957,4 +968,6 @@ The harbor answers.
         db.execute(delete(Character).where(Character.id == character_id))
         db.execute(delete(AuditLog).where(AuditLog.actor_id == admin_id))
         db.execute(delete(Admin).where(Admin.id == admin_id))
+        if english_locale_created:
+            db.execute(delete(Language).where(Language.code == "en"))
         db.commit()

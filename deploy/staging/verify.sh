@@ -2,13 +2,28 @@
 set -euo pipefail
 staging_dir=$(cd "$(dirname "$0")" && pwd)
 root_dir=$(cd "$staging_dir/../.." && pwd)
-env_file="$staging_dir/.env.staging"
+env_file="$root_dir/.env"
+env_reader="$root_dir/deploy/production/hostinger/read_env.py"
 [[ -f "$env_file" ]] || { echo "Run deploy/staging/generate-env.sh first." >&2; exit 1; }
+[[ -f "$env_reader" ]] || { echo "Missing the literal dotenv reader." >&2; exit 1; }
 command -v docker >/dev/null || { echo "Docker is required for staging verification." >&2; exit 1; }
 docker info >/dev/null 2>&1 || { echo "The Docker engine is not running." >&2; exit 1; }
-set -a
-source "$env_file"
-set +a
+value() { python3 "$env_reader" --input "$env_file" --label "$1"; }
+STAGING_API_HOST=$(value STAGING_API_HOST)
+STAGING_HTTPS_PORT=$(value STAGING_HTTPS_PORT)
+STAGING_API_ORIGIN=$(value STAGING_API_ORIGIN)
+STAGING_WEB_HOST=$(value STAGING_WEB_HOST)
+STAGING_WEB_ORIGIN=$(value STAGING_WEB_ORIGIN)
+POSTGRES_USER=$(value POSTGRES_USER)
+POSTGRES_PASSWORD=$(value POSTGRES_PASSWORD)
+STAGING_POSTGRES_PORT=$(value STAGING_POSTGRES_PORT)
+POSTGRES_DB=$(value POSTGRES_DB)
+STAGING_MINIO_PORT=$(value STAGING_MINIO_PORT)
+STAGING_STORAGE_ORIGIN=$(value STAGING_STORAGE_ORIGIN)
+MINIO_ROOT_USER=$(value MINIO_ROOT_USER)
+MINIO_ROOT_PASSWORD=$(value MINIO_ROOT_PASSWORD)
+SESSION_SECRET=$(value SESSION_SECRET)
+STAGING_MAILPIT_PORT=$(value STAGING_MAILPIT_PORT)
 if docker compose version >/dev/null 2>&1; then
   compose=(docker compose --env-file "$env_file" -f "$staging_dir/compose.yml")
 else

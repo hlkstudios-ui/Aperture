@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireCustomerSession } from "@/app/lib/customer-session";
 import { forwardedGeoHeaders } from "@/app/lib/geo-headers";
+import { browserPlaybackUrl } from "@/app/lib/api-gateway";
 
 export type PlaybackConfig = {
   source_id: string; movie_id: string | null; episode_id: string | null; edition_id: string | null;
@@ -43,7 +44,15 @@ export async function playbackFetch(path: string): Promise<PlaybackConfig | Play
   if (response.status === 409) return { error: "stream_limit", message: "This account is already streaming on the maximum number of devices." };
   if (response.status === 503) return { error: "coordination", message: "Playback coordination is temporarily unavailable." };
   if (!response.ok) throw new Error(`Playback configuration failed (${response.status})`);
-  return response.json() as Promise<PlaybackConfig>;
+  const config = await response.json() as PlaybackConfig;
+  return {
+    ...config,
+    manifest_url: browserPlaybackUrl(config.manifest_url, origin),
+    subtitle_tracks: config.subtitle_tracks.map((track) => ({
+      ...track,
+      url: browserPlaybackUrl(track.url, origin),
+    })),
+  };
 }
 
 export function isPlaybackUnavailable(value: PlaybackConfig | PlaybackUnavailable): value is PlaybackUnavailable {

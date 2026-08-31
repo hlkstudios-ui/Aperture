@@ -96,7 +96,12 @@ def operational_snapshot(db: DbSession) -> tuple[dict, dict]:
         )
     )
     oldest_age = max(0, (datetime.now(UTC) - oldest_queued).total_seconds()) if oldest_queued else 0
-    redis_client = redis.from_url(settings.redis_url)
+    redis_client = redis.from_url(
+        settings.redis_url,
+        socket_connect_timeout=1,
+        socket_timeout=1,
+        retry_on_timeout=False,
+    )
     try:
         media_backlog = redis_client.llen(PROCESSING_QUEUE)
         scene_backlog = redis_client.llen(SCENE_QUEUE)

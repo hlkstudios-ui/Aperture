@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import isoCountries from "i18n-iso-countries";
 import englishCountries from "i18n-iso-countries/langs/en.json";
+import type { TrendingTitlesResponse } from "@/app/browse/browse-types";
 import { ResponsivePoster } from "@/app/components/responsive-poster";
+import { useSiteBrand } from "@/app/components/site-brand-provider";
 import { rememberClientSearch } from "@/app/lib/client-state";
+import type { ExploreCardTitle, ExploreCriteria, ExploreEntry } from "@/app/lib/explore";
 
 isoCountries.registerLocale(englishCountries);
 
@@ -27,14 +30,415 @@ export type FilterTitle = {
   duration_minutes: number | null;
   season_count: number;
   episode_count: number;
-  audio_languages: string[];
-  subtitle_languages: string[];
+  audio_languages?: string[];
+  subtitle_languages?: string[];
   href?: string;
-  source?: "local" | "tmdb";
+  source?: "local" | "aperture" | "tmdb";
+  availability?: string;
+  vote_average?: number | null;
+  vote_count?: number | null;
+  popularity?: number | null;
 };
 
 const ALL = "all";
-const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8000";
+const TRENDING_REVEAL_SIZE = 12;
+const BUILTIN_EXPLORE_OPTIONS = [
+  { value: "recent", label: "Recent Searches", detail: "Return to searches you made", icon: "↺" },
+  { value: "trending", label: "Trending", detail: "See what is popular now", icon: "↗" },
+  { value: "ongoing", label: "Ongoing", detail: "Find currently airing series", icon: "●" },
+] as const;
+
+function mergeTrendingTitles(current: FilterTitle[], incoming: FilterTitle[]) {
+  const seen = new Set(current.map((item) => `${item.kind}:${item.id}`));
+  return [
+    ...current,
+    ...incoming.filter((item) => {
+      const key = `${item.kind}:${item.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }),
+  ];
+}
+
+function trendingRuntime(minutes: number | null) {
+  if (!minutes) return null;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return hours ? `${hours}h ${remainder ? `${remainder}m` : ""}` : `${minutes}m`;
+}
+
+function trendingFacts(item: FilterTitle) {
+  const format = item.kind === "series"
+    ? item.episode_count > 0
+      ? `${item.episode_count} ${item.episode_count === 1 ? "episode" : "episodes"}`
+      : item.season_count > 0
+        ? `${item.season_count} ${item.season_count === 1 ? "season" : "seasons"}`
+        : item.is_ongoing
+          ? "Ongoing"
+          : null
+    : trendingRuntime(item.duration_minutes);
+  return [format, item.maturity_rating, item.country_code, item.original_language_code?.toUpperCase()]
+    .filter((value): value is string => Boolean(value))
+    .slice(0, 3);
+}
+
+function ExploreTitleCards({
+  items,
+  labelledBy,
+}: {
+  items: FilterTitle[];
+  labelledBy: string;
+}) {
+  return <ol className="trending-card-list" aria-labelledby={labelledBy}>
+    {items.map((item, index) => <li key={`explore-${item.kind}-${item.id}`}>
+      <Link className="trending-card" href={item.href ?? `/${item.kind === "movie" ? "movies" : "series"}/${item.slug}`}>
+        <div className={`trending-card-art ${item.poster_url ? "" : "missing"}`}>
+          {item.poster_url ? <ResponsivePoster src={item.poster_url} sizes="72px" alt={`${item.title} poster`} /> : <span aria-hidden="true">{item.title.slice(0, 1)}</span>}
+          <b aria-label={`Rank ${index + 1}`}>{String(index + 1).padStart(2, "0")}</b>
+        </div>
+        <div className="trending-card-copy">
+          <div className="trending-card-kicker"><span>{item.kind === "series" ? "Series" : "Movie"}</span><span>{item.release_date?.slice(0, 4) ?? "Upcoming"}</span>{item.vote_average ? <span>★ {item.vote_average.toFixed(1)}</span> : null}</div>
+          <strong>{item.title}</strong>
+          <p>{item.short_description || "More details are coming soon."}</p>
+          {item.genres.length ? <small className="trending-card-genres">{item.genres.slice(0, 2).join(" · ")}</small> : null}
+          {trendingFacts(item).length ? <small className="trending-card-facts">{trendingFacts(item).join(" · ")}</small> : null}
+        </div>
+      </Link>
+    </li>)}
+  </ol>;
+}
+
+function titleMatchesExploreCriteria(item: FilterTitle, criteria: ExploreCriteria) {
+  if (criteria.content_type === "movie" && item.kind !== "movie") return false;
+  if (criteria.content_type === "series" && item.kind !== "series") return false;
+  if (criteria.content_type === "ova" && item.content_format !== "ova") return false;
+  const query = criteria.query?.toLocaleLowerCase();
+  if (query && !`${item.title} ${item.short_description} ${item.genres.join(" ")} ${item.studios.join(" ")}`.toLocaleLowerCase().includes(query)) return false;
+  if (criteria.genre && !item.genres.some((genre) => genre.toLocaleLowerCase() === criteria.genre?.toLocaleLowerCase())) return false;
+  if (criteria.studio && !item.studios.some((studio) => studio.toLocaleLowerCase() === criteria.studio?.toLocaleLowerCase())) return false;
+  if (criteria.country_code && item.country_code !== criteria.country_code) return false;
+  if (criteria.original_language_code && item.original_language_code !== criteria.original_language_code) return false;
+  if (criteria.maturity_rating && item.maturity_rating !== criteria.maturity_rating) return false;
+  if (criteria.airing === "ongoing" && item.is_ongoing !== true) return false;
+  if (criteria.airing === "finished" && (item.kind !== "series" || item.is_ongoing !== false)) return false;
+  const year = item.release_date ? Number(item.release_date.slice(0, 4)) : null;
+  if (criteria.release_period === "2020s" && (!year || year < 2020)) return false;
+  if (criteria.release_period === "2010s" && (!year || year < 2010 || year > 2019)) return false;
+  if (criteria.release_period === "classic" && (!year || year >= 2010)) return false;
+  if (criteria.duration === "short" && (!item.duration_minutes || item.duration_minutes >= 30)) return false;
+  if (criteria.duration === "standard" && (!item.duration_minutes || item.duration_minutes < 30 || item.duration_minutes > 90)) return false;
+  if (criteria.duration === "long" && (!item.duration_minutes || item.duration_minutes <= 90)) return false;
+  return true;
+}
+
+function exploreCardTitle(title: ExploreCardTitle): FilterTitle {
+  return {
+    id: title.id,
+    kind: title.kind,
+    title: title.title,
+    slug: title.slug,
+    short_description: title.short_description,
+    poster_url: title.poster_url,
+    release_date: title.release_date,
+    maturity_rating: title.maturity_rating,
+    country_code: title.country_code,
+    original_language_code: title.original_language_code,
+    is_ongoing: title.is_ongoing,
+    content_format: title.content_format,
+    studios: title.studios,
+    genres: title.genres,
+    duration_minutes: title.duration_minutes,
+    season_count: title.season_count,
+    episode_count: title.episode_count,
+    audio_languages: [],
+    subtitle_languages: [],
+    href: title.href,
+    source: title.source,
+    availability: title.availability,
+  };
+}
+
+function ExploreCollectionView({
+  feedId,
+  eyebrow,
+  heading,
+  description,
+  items,
+  actionLabel,
+  onAction,
+  headerExtras,
+  loadMoreLabel,
+  emptyHeading = "No matching titles yet.",
+  emptyDescription = "This view will fill automatically as matching catalog titles become available.",
+}: {
+  feedId: string;
+  eyebrow: string;
+  heading: string;
+  description: string;
+  items: FilterTitle[];
+  actionLabel?: string;
+  onAction?: () => void;
+  headerExtras?: ReactNode;
+  loadMoreLabel?: string;
+  emptyHeading?: string;
+  emptyDescription?: string;
+}) {
+  const [visibleCount, setVisibleCount] = useState(() => Math.min(TRENDING_REVEAL_SIZE, items.length));
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const hasMore = visibleCount < items.length;
+  const revealMore = useCallback(() => {
+    setVisibleCount((current) => Math.min(current + TRENDING_REVEAL_SIZE, items.length));
+  }, [items.length]);
+
+  useEffect(() => {
+    const root = scrollRef.current;
+    const sentinel = sentinelRef.current;
+    if (!root || !sentinel || !hasMore || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((items) => {
+      if (items.some((item) => item.isIntersecting)) revealMore();
+    }, { root, rootMargin: "0px 0px 240px" });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, revealMore]);
+
+  const visibleItems = items.slice(0, visibleCount);
+  return <div className="managed-explore-view" data-explore-card-feed="true">
+    <header className="managed-explore-heading">
+      <div><p className="eyebrow">{eyebrow}</p><h3 id={feedId}>{heading}</h3></div>
+      <span>{visibleItems.length} / {items.length}</span>
+      <p>{description}</p>
+      {actionLabel && onAction ? <button type="button" onClick={onAction}>{actionLabel}</button> : null}
+      {headerExtras ? <div className="explore-card-feed-extras">{headerExtras}</div> : null}
+    </header>
+    <div className="managed-explore-scroll" ref={scrollRef}>
+      {visibleItems.length ? <ExploreTitleCards items={visibleItems} labelledBy={feedId} /> : <div className="trending-feed-empty"><strong>{emptyHeading}</strong><p>{emptyDescription}</p></div>}
+      {hasMore ? <div className="trending-feed-sentinel" ref={sentinelRef} aria-hidden="true" /> : null}
+      {hasMore ? <button className="trending-load-more" type="button" onClick={revealMore}>Load more {loadMoreLabel ?? heading}</button> : visibleItems.length ? <p className="trending-feed-end">You’ve reached the end of this view.</p> : null}
+    </div>
+  </div>;
+}
+
+function ConfiguredExploreView({
+  entry,
+  titles,
+  onApply,
+}: {
+  entry: ExploreEntry;
+  titles: FilterTitle[];
+  onApply: () => void;
+}) {
+  const matches = useMemo(() => {
+    const catalogTitles = new Map(titles.map((title) => [`${title.kind}:${title.id}`, title]));
+    const seen = new Set<string>();
+    const items: FilterTitle[] = [];
+    for (const card of [...(entry.cards ?? [])].sort((left, right) => left.position - right.position)) {
+      const hydrated = exploreCardTitle(card.title);
+      const key = `${hydrated.kind}:${hydrated.id}`;
+      if (seen.has(key)) continue;
+      const catalogTitle = catalogTitles.get(key);
+      items.push(catalogTitle ? {
+        ...hydrated,
+        ...catalogTitle,
+        href: catalogTitle.href ?? hydrated.href,
+        poster_url: catalogTitle.poster_url ?? hydrated.poster_url,
+      } : hydrated);
+      seen.add(key);
+    }
+    for (const title of titles) {
+      const key = `${title.kind}:${title.id}`;
+      if (!seen.has(key) && titleMatchesExploreCriteria(title, entry.criteria)) {
+        items.push(title);
+        seen.add(key);
+      }
+    }
+    return items;
+  }, [entry.cards, entry.criteria, titles]);
+  return <ExploreCollectionView
+    feedId={`managed-explore-${entry.id}`}
+    eyebrow="Studio programmed"
+    heading={entry.label}
+    description={entry.description || "A custom view of the catalog."}
+    items={matches}
+    actionLabel="Show these titles in the catalog"
+    onAction={onApply}
+  />;
+}
+
+function OngoingExploreView({ titles, onApply }: { titles: FilterTitle[]; onApply: () => void }) {
+  const ongoingTitles = useMemo(
+    () => titles.filter((item) => item.kind === "series" && item.is_ongoing),
+    [titles],
+  );
+  return <ExploreCollectionView
+    feedId="ongoing-titles-heading"
+    eyebrow="New episodes"
+    heading="Currently airing"
+    description="Series with new episodes and seasons available now."
+    items={ongoingTitles}
+    actionLabel="Show all ongoing series"
+    onAction={onApply}
+    loadMoreLabel="ongoing titles"
+    emptyHeading="No ongoing series yet."
+    emptyDescription="Poster cards will appear here as currently airing series become available."
+  />;
+}
+
+function RecentExploreView({
+  titles,
+  searches,
+  onSelect,
+  onClear,
+}: {
+  titles: FilterTitle[];
+  searches: string[];
+  onSelect: (search: string) => void;
+  onClear: () => void;
+}) {
+  const recentTitles = useMemo(() => {
+    const seen = new Set<string>();
+    const items: FilterTitle[] = [];
+    for (const search of searches) {
+      const normalized = search.toLocaleLowerCase();
+      for (const title of titles) {
+        const key = `${title.kind}:${title.id}`;
+        const haystack = `${title.title} ${title.short_description} ${title.genres.join(" ")} ${title.studios.join(" ")}`.toLocaleLowerCase();
+        if (!seen.has(key) && haystack.includes(normalized)) {
+          items.push(title);
+          seen.add(key);
+        }
+      }
+    }
+    return items;
+  }, [searches, titles]);
+  const extras = searches.length ? <div className="recent-search-chips" aria-label="Recent search terms">
+    {searches.map((search) => <button type="button" onClick={() => onSelect(search)} key={search}>{search}</button>)}
+    <button type="button" className="clear-recent" onClick={onClear}>Clear history</button>
+  </div> : null;
+  return <ExploreCollectionView
+    key={searches.join("\u0000")}
+    feedId="recent-search-titles-heading"
+    eyebrow="Your activity"
+    heading="Recent searches"
+    description="Poster cards connected to searches stored in this browser."
+    items={recentTitles}
+    headerExtras={extras}
+    emptyHeading={searches.length ? "No matching cards yet." : "No recent searches yet."}
+    emptyDescription={searches.length ? "Try one of the saved search terms again as the catalog grows." : "Search for a title and press Enter. Matching cards will appear here."}
+  />;
+}
+
+function TrendingTitleFeed({ fallbackTitles }: { fallbackTitles: FilterTitle[] }) {
+  const brand = useSiteBrand();
+  const [items, setItems] = useState<FilterTitle[]>(fallbackTitles);
+  const [visibleCount, setVisibleCount] = useState(Math.min(TRENDING_REVEAL_SIZE, fallbackTitles.length));
+  const [mode, setMode] = useState<"loading" | "provider" | "fallback">("loading");
+  const [nextPage, setNextPage] = useState<number | null>(null);
+  const [remoteHasMore, setRemoteHasMore] = useState(false);
+  const [totalResults, setTotalResults] = useState(fallbackTitles.length);
+  const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState("Connecting to the weekly global pulse.");
+  const [announcement, setAnnouncement] = useState("");
+  const [attribution, setAttribution] = useState<TrendingTitlesResponse["attribution"] | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const requestRef = useRef<AbortController | null>(null);
+  const loadingRef = useRef(false);
+
+  const requestPage = useCallback(async (page: number, replace: boolean) => {
+    if (loadingRef.current) return;
+    const controller = new AbortController();
+    requestRef.current?.abort();
+    requestRef.current = controller;
+    loadingRef.current = true;
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/catalog/trending?page=${page}`, { signal: controller.signal });
+      if (!response.ok) throw new Error("The weekly pulse could not be reached.");
+      const payload = await response.json() as TrendingTitlesResponse;
+      if (payload.status !== "ready") throw new Error("The weekly pulse is temporarily unavailable.");
+      if (controller.signal.aborted) return;
+      const unique = mergeTrendingTitles([], payload.items);
+      if (replace && !unique.length && !payload.has_more) {
+        throw new Error("The weekly pulse has no available artwork yet.");
+      }
+      setItems((current) => replace ? unique : mergeTrendingTitles(current, unique));
+      setVisibleCount((current) => replace ? Math.min(TRENDING_REVEAL_SIZE, unique.length) : current);
+      setMode("provider");
+      setNextPage(payload.next_page);
+      setRemoteHasMore(payload.has_more);
+      setTotalResults(payload.total_results);
+      setAttribution(payload.attribution);
+      setNotice("Worldwide movie and series momentum from the past seven days.");
+      setAnnouncement(`${unique.length} ${replace ? "trending titles loaded" : "more trending titles added"}.`);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      if (replace) {
+        setMode("fallback");
+        setRemoteHasMore(false);
+        setNextPage(null);
+        setNotice("Live weekly trends are unavailable, so catalog highlights are shown instead.");
+      } else {
+        setNotice(error instanceof Error ? error.message : "More weekly trends could not be loaded.");
+      }
+    } finally {
+      if (requestRef.current === controller) {
+        requestRef.current = null;
+        loadingRef.current = false;
+        setLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void requestPage(1, true), 0);
+    return () => {
+      window.clearTimeout(timer);
+      requestRef.current?.abort();
+    };
+  }, [requestPage]);
+
+  const hasBufferedTitles = visibleCount < items.length;
+  const hasMore = hasBufferedTitles || (mode === "provider" && remoteHasMore && nextPage !== null);
+  const loadMore = useCallback(() => {
+    if (hasBufferedTitles) {
+      const next = Math.min(visibleCount + TRENDING_REVEAL_SIZE, items.length);
+      setVisibleCount(next);
+      setAnnouncement(`${next} trending titles are now visible.`);
+      return;
+    }
+    if (mode === "provider" && remoteHasMore && nextPage !== null) {
+      void requestPage(nextPage, false);
+    }
+  }, [hasBufferedTitles, items.length, mode, nextPage, remoteHasMore, requestPage, visibleCount]);
+
+  useEffect(() => {
+    const root = scrollRef.current;
+    const sentinel = sentinelRef.current;
+    if (!root || !sentinel || !hasMore || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) loadMore();
+    }, { root, rootMargin: "0px 0px 280px" });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadMore]);
+
+  const visibleItems = items.slice(0, visibleCount);
+  return <div className="trending-feed" data-fade={hasMore ? "true" : "false"}>
+    <header className="trending-feed-heading">
+      <div><p className="eyebrow">{mode === "provider" ? "Global · seven days" : `${brand.short_name} catalog`}</p><h3 id="trending-titles-heading">Trending titles</h3></div>
+      <span>{visibleItems.length} / {(mode === "provider" ? totalResults : items.length).toLocaleString()}</span>
+      <p>{notice} {mode === "provider" && attribution ? <a href={attribution.url} title={attribution.notice} target="_blank" rel="noreferrer">TMDB</a> : null}</p>
+    </header>
+    <div className="trending-feed-scroll" ref={scrollRef}>
+      {visibleItems.length ? <ExploreTitleCards items={visibleItems} labelledBy="trending-titles-heading" /> : <div className="trending-feed-empty"><strong>The weekly chart is warming up.</strong><p>Movie and series cards will appear as soon as artwork is available.</p></div>}
+      {hasMore ? <div className="trending-feed-sentinel" ref={sentinelRef} aria-hidden="true" /> : null}
+      {hasMore ? <button className="trending-load-more" type="button" onClick={loadMore} disabled={loading}>{loading ? "Loading more titles…" : "Load more trending titles"}</button> : visibleItems.length ? <p className="trending-feed-end">You’ve reached the end of this pulse.</p> : null}
+    </div>
+    <span className="sr-only" role="status" aria-live="polite">{announcement}</span>
+  </div>;
+}
 
 function countryName(code: string) {
   return isoCountries.getName(code, "en", { select: "official" }) ?? code;
@@ -181,7 +585,14 @@ function SearchableSingleSelect({
   </fieldset>;
 }
 
-export function CatalogFilterBrowser({ titles }: { titles: FilterTitle[] }) {
+export function CatalogFilterBrowser({
+  titles,
+  exploreEntries = [],
+}: {
+  titles: FilterTitle[];
+  exploreEntries?: ExploreEntry[];
+}) {
+  const brand = useSiteBrand();
   const [type, setType] = useState(ALL);
   const [countriesSelected, setCountriesSelected] = useState<string[]>([]);
   const [duration, setDuration] = useState(ALL);
@@ -193,7 +604,7 @@ export function CatalogFilterBrowser({ titles }: { titles: FilterTitle[] }) {
   const [airing, setAiring] = useState(ALL);
   const [query, setQuery] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
-  const [discoveryView, setDiscoveryView] = useState<"recent" | "trending" | "ongoing">("recent");
+  const [discoveryView, setDiscoveryView] = useState<string>("trending");
   const [discoveryOpen, setDiscoveryOpen] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [resultPage, setResultPage] = useState(0);
@@ -202,6 +613,45 @@ export function CatalogFilterBrowser({ titles }: { titles: FilterTitle[] }) {
   const [remoteQuery, setRemoteQuery] = useState("");
   const [searchingEverywhere, setSearchingEverywhere] = useState(false);
   const [remoteSearchFailed, setRemoteSearchFailed] = useState(false);
+  const discoveryPanelRef = useRef<HTMLElement>(null);
+  const discoveryFrameRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const panel = discoveryPanelRef.current;
+    const frame = discoveryFrameRef.current;
+    if (!panel || !frame) return;
+
+    let animationFrame = 0;
+    const updateFrameHeight = () => {
+      animationFrame = 0;
+      if (window.innerWidth <= 900) {
+        frame.style.removeProperty("--catalog-discovery-frame-height");
+        return;
+      }
+      const viewportHeight = Math.max(0, window.innerHeight - 108);
+      const containedHeight = Math.max(0, panel.getBoundingClientRect().bottom - 93);
+      frame.style.setProperty(
+        "--catalog-discovery-frame-height",
+        `${Math.min(viewportHeight, containedHeight)}px`,
+      );
+    };
+    const scheduleFrameUpdate = () => {
+      if (!animationFrame) animationFrame = window.requestAnimationFrame(updateFrameHeight);
+    };
+
+    updateFrameHeight();
+    window.addEventListener("scroll", scheduleFrameUpdate, { passive: true });
+    window.addEventListener("resize", scheduleFrameUpdate);
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleFrameUpdate);
+    resizeObserver?.observe(panel);
+    return () => {
+      window.removeEventListener("scroll", scheduleFrameUpdate);
+      window.removeEventListener("resize", scheduleFrameUpdate);
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+      resizeObserver?.disconnect();
+      frame.style.removeProperty("--catalog-discovery-frame-height");
+    };
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -222,7 +672,7 @@ export function CatalogFilterBrowser({ titles }: { titles: FilterTitle[] }) {
       setSearchingEverywhere(true);
       setRemoteSearchFailed(false);
       try {
-        const response = await fetch(`${apiOrigin}/catalog/search?q=${encodeURIComponent(clean)}&page_size=48`, { signal: controller.signal });
+        const response = await fetch(`/api/catalog/search?q=${encodeURIComponent(clean)}&page_size=48`, { signal: controller.signal });
         if (!response.ok) throw new Error("search unavailable");
         const payload = await response.json();
         setRemoteResults(payload.titles.map((item: Record<string, unknown>) => ({
@@ -303,6 +753,37 @@ export function CatalogFilterBrowser({ titles }: { titles: FilterTitle[] }) {
     language !== ALL ? { key: "language", label: language.toUpperCase(), clear: () => setLanguage(ALL) } : null,
     airing !== ALL ? { key: "airing", label: airing === "finished" ? "Completed" : "Ongoing", clear: () => setAiring(ALL) } : null,
   ].filter((item): item is { key: string; label: string; clear: () => void } => item !== null);
+  const managedExploreEntry = exploreEntries.find((entry) => `managed:${entry.id}` === discoveryView);
+  const resolvedDiscoveryView = BUILTIN_EXPLORE_OPTIONS.some((option) => option.value === discoveryView) || managedExploreEntry
+    ? discoveryView
+    : "trending";
+  const discoveryOptions = [
+    ...BUILTIN_EXPLORE_OPTIONS,
+    ...exploreEntries.map((entry) => ({
+      value: `managed:${entry.id}`,
+      label: entry.label,
+      detail: entry.description || "Studio-programmed catalog filter",
+      icon: entry.icon,
+    })),
+  ];
+  const activeDiscoveryOption = discoveryOptions.find((option) => option.value === resolvedDiscoveryView)
+    ?? BUILTIN_EXPLORE_OPTIONS[1];
+
+  const applyExploreEntry = (entry: ExploreEntry) => {
+    const criteria = entry.criteria;
+    setType(criteria.content_type === "series" ? "tv" : criteria.content_type);
+    setCountriesSelected(criteria.country_code ? [criteria.country_code] : []);
+    setDuration(criteria.duration);
+    setStudio(criteria.studio ?? ALL);
+    setGenre(criteria.genre ?? ALL);
+    setReleasePeriod(criteria.release_period);
+    setRating(criteria.maturity_rating ?? ALL);
+    setLanguage(criteria.original_language_code ?? ALL);
+    setAiring(criteria.airing);
+    setQuery(criteria.query ?? "");
+    setResultPage(0);
+    setSlideDirection("back");
+  };
 
   return (
     <section className="catalog-browser" aria-labelledby="browse-title">
@@ -323,12 +804,12 @@ export function CatalogFilterBrowser({ titles }: { titles: FilterTitle[] }) {
       </div> : null}
       <div className="catalog-browser-body simplified">
         <div className="catalog-filter-results">
-          <header><div><p className="eyebrow">Instant results</p><h2>Anime and movies</h2></div></header>
-          {remoteSearchFailed ? <div className="filter-empty"><h3>Global search is unavailable</h3><p>Check the connection or open the complete Search page.</p><Link href={`/search?q=${encodeURIComponent(query)}`}>Open Search</Link></div> : searchingEverywhere ? <div className="instant-search-loading" role="status"><span/><strong>Searching Aperture and the global catalog…</strong></div> : filtered.length ? <><div className={`filter-title-grid results-swoosh ${slideDirection}`} key={`${activeResultPage}:${query}:${type}:${genre}:${countriesSelected.join(",")}`}>{visibleResults.map((item) => (
+          <header><div><h2>Anime and movies</h2></div></header>
+          {remoteSearchFailed ? <div className="filter-empty"><h3>Global search is unavailable</h3><p>Check the connection or open the complete Search page.</p><Link href={`/search?q=${encodeURIComponent(query)}`}>Open Search</Link></div> : searchingEverywhere ? <div className="instant-search-loading" role="status"><span/><strong>Searching {brand.short_name} and the global catalog…</strong></div> : filtered.length ? <><div className={`filter-title-grid results-swoosh ${slideDirection}`} key={`${activeResultPage}:${query}:${type}:${genre}:${countriesSelected.join(",")}`}>{visibleResults.map((item) => (
             <Link href={item.href ?? `/${item.kind === "movie" ? "movies" : "series"}/${item.slug}`} className="filter-title-card" key={`${item.kind}:${item.id}`}>
               <div className={`filter-title-art ${item.poster_url ? "" : "missing"}`}>{item.poster_url ? <ResponsivePoster src={item.poster_url} sizes="(max-width: 420px) 120px, (max-width: 760px) 145px, 155px" /> : <div className="filter-title-placeholder"><span>{item.title[0]}</span><small>Artwork coming soon</small></div>}<small>{item.content_format === "ova" ? "OVA" : item.kind}</small></div>
               <div className="filter-title-info">
-                <h3>{item.title}</h3>{item.source === "tmdb" ? <span className="instant-global-badge">Global result</span> : null}
+                <h3>{item.title}</h3>
                 <div className="filter-title-meta">
                   <span>{item.release_date?.slice(0, 4) ?? "TBA"}</span>
                   {item.maturity_rating ? <span>{item.maturity_rating}</span> : null}
@@ -356,39 +837,32 @@ export function CatalogFilterBrowser({ titles }: { titles: FilterTitle[] }) {
             <button type="button" className="result-arrow next" disabled={activeResultPage >= resultPageCount - 1} onClick={() => { setSlideDirection("forward"); setResultPage(Math.min(resultPageCount - 1, activeResultPage + 1)); }} aria-label="Show next titles">→</button>
           </div></> : <div className="filter-empty"><h3>No exact matches</h3><p>Try widening one of the filters.</p><button type="button" onClick={reset}>Show everything</button></div>}
         </div>
-        <aside className="catalog-discovery-panel" aria-label="Catalog discovery">
-          <div className="discovery-view-select">
-            <span>Explore</span>
-            <button type="button" className="discovery-menu-trigger" aria-haspopup="listbox" aria-expanded={discoveryOpen} onClick={() => setDiscoveryOpen((open) => !open)}>
-              <span aria-hidden="true">{discoveryView === "recent" ? "↺" : discoveryView === "trending" ? "↗" : "●"}</span>
-              {discoveryView === "recent" ? "Recent Searches" : discoveryView === "trending" ? "Trending" : "Ongoing"}
-              <i aria-hidden="true">⌄</i>
-            </button>
-            {discoveryOpen ? <div className="discovery-menu" role="listbox" aria-label="Explore catalog">
-              {([
-                { value: "recent" as const, label: "Recent Searches", detail: "Return to searches you made", icon: "↺" },
-                { value: "trending" as const, label: "Trending", detail: "See what is popular now", icon: "↗" },
-                { value: "ongoing" as const, label: "Ongoing", detail: "Find currently airing series", icon: "●" },
-              ]).map((option) => <button type="button" role="option" aria-selected={discoveryView === option.value} onClick={() => { setDiscoveryView(option.value); setDiscoveryOpen(false); }} key={option.value}>
-                <span aria-hidden="true">{option.icon}</span><span><strong>{option.label}</strong><small>{option.detail}</small></span>{discoveryView === option.value ? <i aria-hidden="true">✓</i> : null}
-              </button>)}
-            </div> : null}
-          </div>
-          <div className="discovery-panel-content">
-            {discoveryView === "recent" ? <>
-              <header><p className="eyebrow">Your activity</p><h3>Recent searches</h3></header>
-              {recentSearches.length ? <div className="recent-search-list">{recentSearches.map((search) => <button type="button" onClick={() => setQuery(search)} key={search}><span aria-hidden="true">↗</span>{search}</button>)}</div> : <p className="discovery-empty">Search for a title and press Enter. Your recent searches will appear here.</p>}
-              {recentSearches.length ? <button type="button" className="clear-recent" onClick={() => { setRecentSearches([]); localStorage.removeItem("aperture-recent-searches"); }}>Clear history</button> : null}
-            </> : null}
-            {discoveryView === "trending" ? <>
-              <header><p className="eyebrow">Popular now</p><h3>Trending titles</h3></header>
-              <ol className="discovery-title-list">{titles.slice(0, 6).map((item, index) => <li key={`trending-${item.kind}-${item.id}`}><span>{String(index + 1).padStart(2, "0")}</span><Link href={`/${item.kind === "movie" ? "movies" : "series"}/${item.slug}`}><strong>{item.title}</strong><small>{item.kind === "series" ? `${item.episode_count} episodes` : item.release_date?.slice(0, 4) ?? "Coming soon"}</small></Link></li>)}</ol>
-            </> : null}
-            {discoveryView === "ongoing" ? <>
-              <header><p className="eyebrow">New episodes</p><h3>Currently airing</h3></header>
-              <button type="button" className="show-ongoing" onClick={() => setAiring("ongoing")}>Show all ongoing series</button>
-              <div className="ongoing-title-list">{titles.filter((item) => item.kind === "series" && item.is_ongoing).slice(0, 6).map((item) => <Link href={`/series/${item.slug}`} key={`ongoing-${item.id}`}><strong>{item.title}</strong><span>{item.episode_count} episodes</span></Link>)}</div>
-            </> : null}
+        <aside className="catalog-discovery-panel" aria-label="Catalog discovery" data-view={resolvedDiscoveryView} ref={discoveryPanelRef}>
+          <div className="catalog-discovery-frame" ref={discoveryFrameRef}>
+            <div className="discovery-view-select">
+              <span>Explore</span>
+              <button type="button" className="discovery-menu-trigger" aria-haspopup="listbox" aria-expanded={discoveryOpen} onClick={() => setDiscoveryOpen((open) => !open)}>
+                <span aria-hidden="true">{activeDiscoveryOption.icon}</span>
+                {activeDiscoveryOption.label}
+                <i aria-hidden="true">⌄</i>
+              </button>
+              {discoveryOpen ? <div className="discovery-menu" role="listbox" aria-label="Explore catalog">
+                {discoveryOptions.map((option) => <button type="button" role="option" aria-selected={resolvedDiscoveryView === option.value} onClick={() => { setDiscoveryView(option.value); setDiscoveryOpen(false); }} key={option.value}>
+                  <span aria-hidden="true">{option.icon}</span><span><strong>{option.label}</strong><small>{option.detail}</small></span>{resolvedDiscoveryView === option.value ? <i aria-hidden="true">✓</i> : null}
+                </button>)}
+              </div> : null}
+            </div>
+            <div className={`discovery-panel-content ${resolvedDiscoveryView === "trending" ? "is-trending" : resolvedDiscoveryView === "recent" || resolvedDiscoveryView === "ongoing" || managedExploreEntry ? "is-managed" : ""}`}>
+              {resolvedDiscoveryView === "recent" ? <RecentExploreView
+                titles={titles}
+                searches={recentSearches}
+                onSelect={setQuery}
+                onClear={() => { setRecentSearches([]); localStorage.removeItem("aperture-recent-searches"); }}
+              /> : null}
+              {resolvedDiscoveryView === "trending" ? <TrendingTitleFeed fallbackTitles={titles} /> : null}
+              {resolvedDiscoveryView === "ongoing" ? <OngoingExploreView titles={titles} onApply={() => setAiring("ongoing")} /> : null}
+              {managedExploreEntry ? <ConfiguredExploreView key={managedExploreEntry.id} entry={managedExploreEntry} titles={titles} onApply={() => applyExploreEntry(managedExploreEntry)} /> : null}
+            </div>
           </div>
         </aside>
       </div>

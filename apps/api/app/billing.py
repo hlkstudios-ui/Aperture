@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Protocol
+from urllib.parse import urlsplit
 
 import stripe
 
@@ -9,6 +10,22 @@ from app.models import Plan, User
 
 class BillingUnavailable(RuntimeError):
     pass
+
+
+def _return_origin(value: str | None) -> str:
+    candidate = value or str(get_settings().web_origin)
+    parsed = urlsplit(candidate)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        raise BillingUnavailable("The storefront return address is unavailable")
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
 @dataclass(frozen=True)
@@ -28,24 +45,51 @@ class BillingProvider(Protocol):
     name: str
     production_ready: bool
 
-    def create_checkout(self, user: User, plan: Plan) -> CheckoutResult: ...
+    def create_checkout(
+        self, user: User, plan: Plan, return_origin: str | None = None
+    ) -> CheckoutResult: ...
 
-    def create_portal(self, customer_reference: str) -> PortalResult: ...
+    def create_portal(
+        self, customer_reference: str, return_origin: str | None = None
+    ) -> PortalResult: ...
 
 
 class DevelopmentBillingProvider:
     name = "development_stub"
     production_ready = False
 
-    def create_checkout(self, user: User, plan: Plan) -> CheckoutResult:
-        del user, plan
+    def create_checkout(
+        self, user: User, plan: Plan, return_origin: str | None = None
+    ) -> CheckoutResult:
+        del user, plan, return_origin
         raise BillingUnavailable(
             "Development billing stub is non-production and does not process or simulate payments"
         )
 
-    def create_portal(self, customer_reference: str) -> PortalResult:
-        del customer_reference
+    def create_portal(
+        self, customer_reference: str, return_origin: str | None = None
+    ) -> PortalResult:
+        del customer_reference, return_origin
         raise BillingUnavailable("Development billing stub has no customer portal")
+
+
+class DisabledBillingProvider:
+    """Production-safe provider for an explicitly non-commercial launch."""
+
+    name = "disabled"
+    production_ready = False
+
+    def create_checkout(
+        self, user: User, plan: Plan, return_origin: str | None = None
+    ) -> CheckoutResult:
+        del user, plan, return_origin
+        raise BillingUnavailable("Payments are intentionally disabled for this launch")
+
+    def create_portal(
+        self, customer_reference: str, return_origin: str | None = None
+    ) -> PortalResult:
+        del customer_reference, return_origin
+        raise BillingUnavailable("Payments are intentionally disabled for this launch")
 
 
 @dataclass(frozen=True)
@@ -53,12 +97,16 @@ class UnavailableBillingProvider:
     name: str
     production_ready: bool = False
 
-    def create_checkout(self, user: User, plan: Plan) -> CheckoutResult:
-        del user, plan
+    def create_checkout(
+        self, user: User, plan: Plan, return_origin: str | None = None
+    ) -> CheckoutResult:
+        del user, plan, return_origin
         raise BillingUnavailable(f"Billing provider '{self.name}' is not installed")
 
-    def create_portal(self, customer_reference: str) -> PortalResult:
-        del customer_reference
+    def create_portal(
+        self, customer_reference: str, return_origin: str | None = None
+    ) -> PortalResult:
+        del customer_reference, return_origin
         raise BillingUnavailable(f"Billing provider '{self.name}' is not installed")
 
 
@@ -68,8 +116,10 @@ class StripeBillingProvider:
     name: str = "stripe"
     production_ready: bool = True
 
-    def create_checkout(self, user: User, plan: Plan) -> CheckoutResult:
-        settings = get_settings()
+    def create_checkout(
+        self, user: User, plan: Plan, return_origin: str | None = None
+    ) -> CheckoutResult:
+        public_origin = _return_origin(return_origin)
         try:
             session = stripe.checkout.Session.create(
                 api_key=self.secret_key,
@@ -90,8 +140,8 @@ class StripeBillingProvider:
                 ],
                 metadata={"user_id": str(user.id), "plan_code": plan.code},
                 subscription_data={"metadata": {"user_id": str(user.id), "plan_code": plan.code}},
-                success_url=f"{str(settings.web_origin).rstrip('/')}/account?checkout=success",
-                cancel_url=f"{str(settings.web_origin).rstrip('/')}/account?checkout=canceled",
+                success_url=f"{public_origin}/account?checkout=success",
+                cancel_url=f"{public_origin}/account?checkout=canceled",
             )
         except stripe.StripeError as exc:
             raise BillingUnavailable("Stripe checkout is temporarily unavailable") from exc
@@ -103,13 +153,15 @@ class StripeBillingProvider:
             external_reference=session.id,
         )
 
-    def create_portal(self, customer_reference: str) -> PortalResult:
-        settings = get_settings()
+    def create_portal(
+        self, customer_reference: str, return_origin: str | None = None
+    ) -> PortalResult:
+        public_origin = _return_origin(return_origin)
         try:
             session = stripe.billing_portal.Session.create(
                 api_key=self.secret_key,
                 customer=customer_reference,
-                return_url=f"{str(settings.web_origin).rstrip('/')}/account",
+                return_url=f"{public_origin}/account",
             )
         except stripe.StripeError as exc:
             raise BillingUnavailable("Stripe billing portal is temporarily unavailable") from exc
@@ -120,6 +172,8 @@ class StripeBillingProvider:
 
 def get_billing_provider() -> BillingProvider:
     configured = get_settings().billing_provider
+    if configured == "disabled":
+        return DisabledBillingProvider()
     if configured == "development_stub":
         return DevelopmentBillingProvider()
     if configured == "stripe":

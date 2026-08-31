@@ -86,6 +86,16 @@ export type Series = {
   updated_at: string;
 };
 
+export function seriesIsCurrentlyAiring(series: Series, asOf = new Date()): boolean {
+  if (series.is_ongoing === true) return true;
+  const currentDate = asOf.toISOString().slice(0, 10);
+  return series.seasons.some((season) => season.episodes.some((episode) =>
+    episode.status === "published"
+      && Boolean(episode.release_date)
+      && episode.release_date!.slice(0, 10) >= currentDate,
+  ));
+}
+
 export type Credit = {
   id: string;
   person_id: string;
@@ -118,11 +128,13 @@ export type CreditDestination = {
 
 const apiOrigin =
   process.env.API_ORIGIN ??
-  process.env.NEXT_PUBLIC_API_ORIGIN ??
   "http://localhost:8000";
 
 export async function catalogFetch<T>(path: string): Promise<T> {
-  const liveSearch = path.startsWith("/catalog/search");
+  const liveSearch = path.startsWith("/catalog/search")
+    || path.startsWith("/catalog/browse")
+    || path.startsWith("/catalog/trending")
+    || path.startsWith("/catalog/explore");
   const response = await fetch(`${apiOrigin}${path}`, {
     ...(liveSearch ? { cache: "no-store" as const } : { next: { revalidate: 300 } }),
     headers: await forwardedGeoHeaders(),

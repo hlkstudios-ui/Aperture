@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-
-const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8000";
+import { apiGatewayPath } from "@/app/lib/api-gateway";
 
 export function ResetPasswordForm({ token }: { token: string }) {
   const [complete, setComplete] = useState(false);
@@ -14,7 +13,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
     setError("");
     const data = new FormData(event.currentTarget);
     if (data.get("password") !== data.get("confirmation")) { setError("Passwords do not match."); return; }
-    const response = await fetch(`${apiOrigin}/auth/password-reset/confirm`, {
+    const response = await fetch(apiGatewayPath("/auth/password-reset/confirm"), {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token, password: data.get("password") }),
     });

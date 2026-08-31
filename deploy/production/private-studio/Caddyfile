@@ -4,11 +4,15 @@
 }
 
 :8080 {
-	@studio path /studio /studio/* /api/admin /api/admin/* /_next/* /favicon.ico
+	@studio path /studio /studio/* /api/gateway/admin /api/gateway/admin/* /api/site/brand/logo /api/document-locale /_next/* /favicon.ico
 
 	handle @studio {
 		reverse_proxy {$PUBLIC_APP_ORIGIN} {
 			header_up Host {$PUBLIC_APP_HOST}
+			header_up X-Forwarded-Host {$PUBLIC_APP_HOST}
+			header_up -X-Aperture-Public-Host
+			header_up -X-Aperture-Public-Origin
+			header_up -X-Aperture-Edge-Secret
 			header_up X-Aperture-Origin-Secret {$ORIGIN_EDGE_SECRET}
 			header_up X-Aperture-Studio-Edge {$STUDIO_EDGE_SECRET}
 			header_down -Server

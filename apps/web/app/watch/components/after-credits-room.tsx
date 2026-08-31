@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { API_GATEWAY_PREFIX } from "@/app/lib/api-gateway";
 import { useDialogFocus } from "./use-dialog-focus";
 
 type Room = {
@@ -14,7 +15,7 @@ type Room = {
   community_available: boolean;
 };
 
-const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8000";
+const apiOrigin = API_GATEWAY_PREFIX;
 
 export function AfterCreditsRoom({ sourceId, open, onClose }: { sourceId: string; open: boolean; onClose: () => void }) {
   const dialogRef = useDialogFocus(open, onClose);

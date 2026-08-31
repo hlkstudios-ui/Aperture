@@ -1,8 +1,9 @@
 "use client";
 
 import { type FormEvent, useEffect, useState } from "react";
+import { API_GATEWAY_PREFIX } from "@/app/lib/api-gateway";
 
-const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8000";
+const apiOrigin = API_GATEWAY_PREFIX;
 export type ProcessingJob = {
   id: string; asset_id: string; original_filename: string;
   state: "queued" | "probing" | "processing" | "validating" | "ready" | "failed";

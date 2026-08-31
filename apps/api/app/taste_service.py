@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app.catalog_models import Episode, Movie, Season, Series
 from app.catalog_service import movie_query, series_query
+from app.catalog_visibility import exclude_legacy_test_fixtures
 from app.models import PlaybackSource, Profile, WatchProgress
 from app.recommendation_schemas import TasteAffinity, TasteDnaResponse
 
@@ -32,11 +33,22 @@ def watched_titles(db, profile_id) -> list[WatchedTitle]:
     movie_ids = {source.movie_id for _, source, _, _ in progress_rows if source.movie_id}
     series_ids = {season.series_id for _, _, episode, season in progress_rows if episode and season}
     movies = {
-        item.id: item for item in db.scalars(movie_query().where(Movie.id.in_(movie_ids))).unique()
+        item.id: item
+        for item in db.scalars(
+            movie_query().where(
+                Movie.id.in_(movie_ids),
+                *exclude_legacy_test_fixtures(Movie),
+            )
+        ).unique()
     }
     series = {
         item.id: item
-        for item in db.scalars(series_query().where(Series.id.in_(series_ids))).unique()
+        for item in db.scalars(
+            series_query().where(
+                Series.id.in_(series_ids),
+                *exclude_legacy_test_fixtures(Series),
+            )
+        ).unique()
     }
     result: dict[tuple[str, Any], WatchedTitle] = {}
     for progress, source, episode, season in progress_rows:

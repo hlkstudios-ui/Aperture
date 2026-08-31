@@ -5,8 +5,9 @@ import { trackAnalytics } from "@/app/lib/analytics-client";
 import { RelationshipGraph, type RelationshipGraphData } from "./relationship-graph";
 import { CinephileToolkit } from "./cinephile-toolkit";
 import { useDialogFocus } from "./use-dialog-focus";
+import { API_GATEWAY_PREFIX } from "@/app/lib/api-gateway";
 
-const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8000";
+const apiOrigin = API_GATEWAY_PREFIX;
 type Fact = { id: string; kind: string; scene_id: string | null; reveal_seconds: number; payload: Record<string, unknown> };
 type Context = {
   current_scene: { id: string; ordinal: number; title: string; start_seconds: number; end_seconds: number } | null;

@@ -1,12 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
-
-const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8000";
+import { apiGatewayPath } from "@/app/lib/api-gateway";
 
 export function LoginForm() {
-  const router = useRouter();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -16,7 +13,7 @@ export function LoginForm() {
     setError("");
     const data = new FormData(event.currentTarget);
     try {
-      const response = await fetch(`${apiOrigin}/admin/auth/login`, {
+      const response = await fetch(apiGatewayPath("/admin/auth/login"), {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -34,8 +31,10 @@ export function LoginForm() {
         );
         return;
       }
-      router.replace("/studio");
-      router.refresh();
+      // The administrator cookie is issued through the same-origin gateway. A document
+      // navigation guarantees it is committed before the authenticated
+      // Server Component and Studio proxy inspect the next request.
+      window.location.replace("/studio");
     } catch {
       setError("The authentication service is unavailable. Try again shortly.");
     } finally {

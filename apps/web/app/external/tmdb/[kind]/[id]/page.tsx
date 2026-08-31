@@ -2,10 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ResponsivePoster } from "@/app/components/responsive-poster";
 import { SiteHeader } from "@/app/components/site-header";
+import { getSiteBrand } from "@/app/lib/site-brand-server";
 
 const apiOrigin =
   process.env.API_ORIGIN ??
-  process.env.NEXT_PUBLIC_API_ORIGIN ??
   "http://localhost:8000";
 type ExternalTitle = {
   title: string;
@@ -34,6 +34,7 @@ export default async function ExternalTmdbTitlePage({
   );
   if (!response.ok) notFound();
   const title: ExternalTitle = await response.json();
+  const brand = await getSiteBrand();
   return (
     <main className="external-title-shell">
       <SiteHeader />
@@ -50,7 +51,6 @@ export default async function ExternalTmdbTitlePage({
           ) : null}
         </div>
         <div className="external-title-copy">
-          <p className="eyebrow">Global discovery · Metadata via TMDB</p>
           <h1>{title.title}</h1>
           {title.original_title ? <p>{title.original_title}</p> : null}
           <div className="external-title-facts">
@@ -74,7 +74,7 @@ export default async function ExternalTmdbTitlePage({
           ) : null}
           <div className="external-title-note">
             This title was found in the global discovery catalog. Playback
-            availability has not yet been confirmed for Aperture.
+            availability has not yet been confirmed for {brand.business_name}.
           </div>
           <Link className="secondary action-link" href="/search">
             Return to search

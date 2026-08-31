@@ -1,0 +1,533 @@
+/* ====================================================================
+   APERTURE - ACCOUNT PAGE PREMIUM DESIGN
+   Professional, cinematic authentication experience
+   ==================================================================== */
+
+:root {
+  --primary-red: #d93c28;
+  --primary-red-light: #ff6b4a;
+  --primary-red-dark: #a02818;
+  --bg-dark: #080808;
+  --bg-panel: #0f0d0c;
+  --bg-elevated: #16140f;
+  --text-primary: #f5f0e7;
+  --text-secondary: #d4cec4;
+  --text-muted: #8f897d;
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-light: rgba(255, 255, 255, 0.12);
+}
+
+/* ===================== ACCOUNT SHELL ===================== */
+
+.viewer-auth-shell {
+  min-height: 100vh;
+  padding: 2.5rem 6vw;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(217, 60, 40, 0.12) 0%, transparent 32%),
+    radial-gradient(circle at 80% 20%, rgba(122, 75, 125, 0.08) 0%, transparent 40%),
+    linear-gradient(180deg, #080808 0%, #0a0a09 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Animated background elements */
+.viewer-auth-shell::before {
+  content: "";
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  border: 1px solid rgba(217, 60, 40, 0.1);
+  border-radius: 50%;
+  top: -200px;
+  left: -200px;
+  box-shadow: 0 0 80px rgba(217, 60, 40, 0.15);
+  animation: float 20s ease-in-out infinite;
+}
+
+.viewer-auth-shell::after {
+  content: "";
+  position: absolute;
+  width: 400px;
+  height: 400px;
+  border: 1px solid rgba(122, 75, 125, 0.1);
+  border-radius: 50%;
+  bottom: -150px;
+  right: -150px;
+  box-shadow: 0 0 60px rgba(122, 75, 125, 0.1);
+  animation: float 25s ease-in-out infinite reverse;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(30px); }
+}
+
+/* ===================== ACCOUNT CARD ===================== */
+
+.viewer-auth-card {
+  width: min(580px, 100%);
+  position: relative;
+  z-index: 10;
+  padding: 3.5rem;
+  background:
+    linear-gradient(135deg, rgba(31, 28, 26, 0.95), rgba(16, 15, 14, 0.98)),
+    radial-gradient(circle at 20% 50%, rgba(217, 60, 40, 0.08), transparent 50%);
+  border: 1px solid var(--border-light);
+  border-radius: 24px;
+  box-shadow:
+    0 40px 100px rgba(0, 0, 0, 0.4),
+    0 0 80px rgba(217, 60, 40, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  animation: slideUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ===================== HEADINGS ===================== */
+
+.viewer-auth-card h1 {
+  font-family: 'Georgia', serif;
+  font-size: clamp(2.8rem, 5vw, 3.5rem);
+  font-weight: 400;
+  line-height: 0.95;
+  margin: 0.8rem 0 1rem;
+  letter-spacing: -0.04em;
+  background: linear-gradient(135deg, #f5f0e7 0%, #e8dccf 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+/* Welcome back label */
+.viewer-auth-card > p:first-of-type {
+  color: var(--primary-red-light);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+  opacity: 0.95;
+}
+
+/* ===================== OAUTH SECTION ===================== */
+
+.oauth-section {
+  margin: 2rem 0;
+  padding: 2rem 0;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.oauth-title {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.oauth-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+/* OAuth Buttons */
+[role="button"]:has(svg),
+.oauth-button,
+[aria-label*="Google"],
+[aria-label*="Microsoft"],
+[aria-label*="GitHub"],
+[aria-label*="Apple"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  padding: 1rem 1.2rem;
+  background:
+    linear-gradient(135deg, rgba(30, 28, 26, 0.9), rgba(20, 18, 16, 0.95)),
+    radial-gradient(circle at 50% 50%, rgba(217, 60, 40, 0.08), transparent 70%);
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+[role="button"]:has(svg)::before,
+.oauth-button::before,
+[aria-label*="Google"]::before,
+[aria-label*="Microsoft"]::before,
+[aria-label*="GitHub"]::before,
+[aria-label*="Apple"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(217, 60, 40, 0.1), transparent 50%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+[role="button"]:has(svg):hover,
+.oauth-button:hover,
+[aria-label*="Google"]:hover,
+[aria-label*="Microsoft"]:hover,
+[aria-label*="GitHub"]:hover,
+[aria-label*="Apple"]:hover {
+  border-color: var(--primary-red-light);
+  background:
+    linear-gradient(135deg, rgba(40, 35, 30, 0.95), rgba(25, 22, 20, 0.98)),
+    radial-gradient(circle at 50% 50%, rgba(217, 60, 40, 0.12), transparent 60%);
+  box-shadow:
+    0 12px 32px rgba(217, 60, 40, 0.2),
+    0 0 40px rgba(217, 60, 40, 0.15);
+  transform: translateY(-3px);
+}
+
+[role="button"]:has(svg)::before:hover,
+.oauth-button:hover::before,
+[aria-label*="Google"]:hover::before,
+[aria-label*="Microsoft"]:hover::before,
+[aria-label*="GitHub"]:hover::before,
+[aria-label*="Apple"]:hover::before {
+  opacity: 1;
+}
+
+/* OAuth icons styling */
+[role="button"] svg,
+.oauth-button svg {
+  width: 24px;
+  height: 24px;
+  opacity: 0.9;
+}
+
+/* Setup badge styling */
+.setup-badge,
+[class*="setup"],
+[class*="disabled"] {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.7;
+  margin-left: auto;
+}
+
+/* ===================== EMAIL/PASSWORD FORM ===================== */
+
+.auth-divider,
+.form-divider {
+  text-align: center;
+  margin: 2rem 0;
+  position: relative;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.auth-divider::before,
+.form-divider::before,
+.auth-divider::after,
+.form-divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 45%;
+  height: 1px;
+  background: var(--border-color);
+}
+
+.auth-divider::before,
+.form-divider::before {
+  left: 0;
+}
+
+.auth-divider::after,
+.form-divider::after {
+  right: 0;
+}
+
+/* Form labels */
+.viewer-auth-card label,
+.login-form label {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.65rem;
+  margin-top: 1.2rem;
+  letter-spacing: 0.02em;
+}
+
+.viewer-auth-card label:first-of-type {
+  margin-top: 0;
+}
+
+/* Form inputs */
+.viewer-auth-card input,
+.login-form input {
+  width: 100%;
+  padding: 1rem 1.1rem;
+  background: rgba(20, 20, 19, 0.8);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-family: inherit;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+}
+
+.viewer-auth-card input::placeholder,
+.login-form input::placeholder {
+  color: var(--text-muted);
+}
+
+.viewer-auth-card input:focus,
+.login-form input:focus {
+  border-color: var(--primary-red-light);
+  background: rgba(20, 20, 19, 0.95);
+  box-shadow:
+    0 0 0 3px rgba(217, 60, 40, 0.15),
+    inset 0 0 20px rgba(217, 60, 40, 0.05),
+    0 0 30px rgba(217, 60, 40, 0.15);
+}
+
+.viewer-auth-card input:hover,
+.login-form input:hover {
+  border-color: var(--border-light);
+  background: rgba(20, 20, 19, 0.9);
+}
+
+/* ===================== CONTINUE BUTTON ===================== */
+
+.viewer-auth-card button,
+.login-form button {
+  width: 100%;
+  margin-top: 1.5rem;
+  padding: 1.1rem 1.5rem;
+  background: linear-gradient(135deg, var(--primary-red) 0%, var(--primary-red-light) 100%);
+  border: none;
+  border-radius: 999px;
+  color: white;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow:
+    0 8px 24px rgba(217, 60, 40, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  position: relative;
+  overflow: hidden;
+}
+
+.viewer-auth-card button::before,
+.login-form button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), transparent 50%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.viewer-auth-card button:hover,
+.login-form button:hover {
+  transform: translateY(-4px);
+  box-shadow:
+    0 16px 40px rgba(217, 60, 40, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.viewer-auth-card button:active,
+.login-form button:active {
+  transform: translateY(-1px);
+  box-shadow:
+    0 8px 20px rgba(217, 60, 40, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.viewer-auth-card button:disabled,
+.login-form button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ===================== FOOTER LINKS ===================== */
+
+.auth-footer,
+.form-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.85rem;
+}
+
+.auth-footer a,
+.form-links a {
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.auth-footer a::after,
+.form-links a::after {
+  content: "";
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--primary-red), var(--primary-red-light));
+  transition: width 0.3s ease;
+}
+
+.auth-footer a:hover,
+.form-links a:hover {
+  color: var(--primary-red-light);
+}
+
+.auth-footer a:hover::after,
+.form-links a:hover::after {
+  width: 100%;
+}
+
+/* Create account link highlight */
+.auth-footer a:last-child,
+.form-links a:last-child {
+  color: var(--primary-red);
+  font-weight: 600;
+}
+
+/* ===================== SECURITY NOTE ===================== */
+
+.security-note,
+.footer-note,
+[class*="protected"],
+[class*="security"] {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border-top: 1px solid var(--border-color);
+  line-height: 1.5;
+}
+
+/* ===================== RESPONSIVE ===================== */
+
+@media (max-width: 768px) {
+  .viewer-auth-shell {
+    padding: 1.5rem 1.2rem;
+  }
+
+  .viewer-auth-card {
+    width: 100%;
+    padding: 2.5rem 1.5rem;
+    border-radius: 20px;
+  }
+
+  .viewer-auth-card h1 {
+    font-size: clamp(2rem, 5vw, 2.5rem);
+  }
+
+  .oauth-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-footer,
+  .form-links {
+    flex-direction: column;
+    gap: 0.8rem;
+  }
+
+  .setup-badge,
+  [class*="setup"] {
+    margin-left: 0;
+    margin-top: 0.5rem;
+  }
+}
+
+/* ===================== ACCESSIBILITY ===================== */
+
+:focus-visible {
+  outline: 3px solid var(--primary-red-light);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ===================== DARK MODE ENHANCEMENTS ===================== */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-dark: #050505;
+    --text-primary: #f5f0e7;
+  }
+}
+
+/* ===================== LOADING STATE ===================== */
+
+.loading-state,
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(20, 20, 19, 0.8),
+    rgba(30, 25, 20, 0.8),
+    rgba(20, 20, 19, 0.8)
+  );
+  background-size: 1000px 100%;
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+/* ===================== GLASS EFFECT ===================== */
+
+.glass {
+  background: rgba(20, 15, 12, 0.8);
+  backdrop-filter: blur(20px) saturate(120%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}

@@ -164,16 +164,10 @@ export default async function MoviePage({ params }: MoviePageProps) {
           <p className="eyebrow">The story</p>
           <h2>About the film</h2>
           <p>{movie.synopsis}</p>
-          <div className="availability" id="availability">
-            <strong>
-              {playback.available ? "Ready to watch" : "Playback preparation"}
-            </strong>
-            <span>
-              {playback.available
-                ? "Sign in, select a profile, and start the adaptive stream."
-                : "This catalog title has no licensed video asset attached yet."}
-            </span>
-          </div>
+          {playback.available ? <div className="availability" id="availability">
+            <strong>Ready to watch</strong>
+            <span>Sign in, select a profile, and start the adaptive stream.</span>
+          </div> : null}
           {previews.length > 0 && (
             <div>
               <h2>Trailers & clips</h2>

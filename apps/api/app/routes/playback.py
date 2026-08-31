@@ -15,6 +15,7 @@ from sqlalchemy.orm import joinedload
 
 from app.auth import DbSession, require_customer_session, require_trusted_origin
 from app.catalog_models import CatalogStatus, Edition, Episode, Movie, Season, Series
+from app.catalog_visibility import public_title_conditions
 from app.config import get_settings
 from app.geo import OptionalViewerCountry
 from app.models import (
@@ -27,7 +28,7 @@ from app.models import (
 )
 from app.object_storage import s3_client
 from app.playback_schemas import PlaybackConfig, ProgressResponse, ProgressUpdate
-from app.scheduling import availability_clause, territory_clause
+from app.scheduling import territory_clause
 from app.stream_limits import acquire_stream_lease, refresh_stream_lease
 
 router = APIRouter(
@@ -51,12 +52,21 @@ def playable_source(
     source = db.scalar(source_query().where(PlaybackSource.id == source_id))
     if source is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Playback source was not found")
+    now = datetime.now(UTC)
+    if not source.is_active or (
+        source.rights_start_at is not None and source.rights_start_at > now
+    ) or (
+        source.rights_end_at is not None and source.rights_end_at <= now
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Playback source was not found")
+    if source.allowed_territories and (country or "").upper() not in source.allowed_territories:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Playback source was not found")
     if source.movie_id:
         visible = (
             db.scalar(
                 select(Movie.id).where(
                     Movie.id == source.movie_id,
-                    availability_clause(Movie, country=country),
+                    *public_title_conditions(Movie, country=country),
                 )
             )
             is not None
@@ -70,7 +80,7 @@ def playable_source(
                 .where(
                     Episode.id == source.episode_id,
                     Episode.status == CatalogStatus.published,
-                    availability_clause(Series, country=country),
+                    *public_title_conditions(Series, country=country),
                 )
             )
             is not None
@@ -174,17 +184,32 @@ def config_for(
             WatchProgress.playback_source_id == source.id,
         )
     )
-    settings = get_settings()
-    if settings.media_delivery_mode == "cdn":
-        media_base = cdn_media_base(source.id, session.id, country)
+    if source.external_manifest_url:
+        manifest_url = source.external_manifest_url
+        subtitle_tracks: list[dict[str, object]] = []
+        qualities: list[dict[str, object]] = []
+        audio_tracks: list[dict[str, object]] = []
+        duration_seconds = source.duration_seconds or 0
     else:
-        origin = str(settings.api_origin).rstrip("/")
-        media_base = f"{origin}/playback/sources/{source.id}/media"
-    subtitle_tracks = [
-        {**track, "url": f"{media_base}/{track['key']}"}
-        for track in job.subtitle_tracks
-        if track.get("key")
-    ]
+        if job is None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Playback source has no media origin")
+        settings = get_settings()
+        if settings.media_delivery_mode == "cdn":
+            media_base = cdn_media_base(source.id, session.id, country)
+        else:
+            # Browser clients reach managed media through the storefront's
+            # same-origin gateway. A relative API-owned path avoids exposing a
+            # deployment-specific API origin in playback configuration.
+            media_base = f"/playback/sources/{source.id}/media"
+        manifest_url = f"{media_base}/master.m3u8"
+        subtitle_tracks = [
+            {**track, "url": f"{media_base}/{track['key']}"}
+            for track in job.subtitle_tracks
+            if track.get("key")
+        ]
+        qualities = job.rendition_status
+        audio_tracks = job.audio_tracks
+        duration_seconds = job.duration_seconds or 0
     return PlaybackConfig(
         source_id=source.id,
         movie_id=source.movie_id,
@@ -202,10 +227,10 @@ def config_for(
         caption_position=preference.caption_position if preference else "bottom",
         title=title,
         subtitle=subtitle,
-        manifest_url=f"{media_base}/master.m3u8",
-        duration_seconds=job.duration_seconds or 0,
-        qualities=job.rendition_status,
-        audio_tracks=job.audio_tracks,
+        manifest_url=manifest_url,
+        duration_seconds=duration_seconds,
+        qualities=qualities,
+        audio_tracks=audio_tracks,
         subtitle_tracks=subtitle_tracks,
         intro=(source.intro_start_seconds, source.intro_end_seconds)
         if source.intro_start_seconds is not None and source.intro_end_seconds is not None
@@ -230,7 +255,7 @@ def movie_config(
         .outerjoin(Edition, PlaybackSource.edition_id == Edition.id)
         .where(
             Movie.slug == slug,
-            availability_clause(Movie, country=country),
+            *public_title_conditions(Movie, country=country),
             or_(
                 PlaybackSource.edition_id.is_(None),
                 and_(

@@ -33,8 +33,10 @@ from app.routes import (
     admin_homepage,
     admin_playback,
     admin_processing,
+    admin_revenue,
     admin_scenes,
     admin_support,
+    admin_tmdb,
     admin_uploads,
     analytics,
     billing_webhooks,
@@ -44,6 +46,8 @@ from app.routes import (
     curation,
     customer_auth,
     customer_catalog,
+    e2e_runtime,
+    explore,
     homepage,
     oauth,
     operations,
@@ -52,6 +56,8 @@ from app.routes import (
     profiles,
     recommendations,
     scene_intelligence,
+    site_brand,
+    site_domains,
 )
 
 settings = get_settings()
@@ -84,6 +90,10 @@ app = FastAPI(
     redoc_url=None if production else "/redoc",
     openapi_url=None if production else "/openapi.json",
 )
+# Customer browsers, including custom domains, call the same-origin Next.js
+# gateway. FastAPI is not a public cross-origin browser API; protected media
+# has its own registry-backed CORS policy at the CDN Worker. Keep this list
+# limited to the platform/private administrative origins.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -164,6 +174,23 @@ async def security_headers(request, call_next):
     return response
 
 
+@app.middleware("http")
+async def private_brand_assistant_cache_boundary(request, call_next):
+    response = await call_next(request)
+    if request.url.path.rstrip("/") == "/admin/site/brand/assist-copy":
+        for name, value in site_brand.PRIVATE_NO_STORE_HEADERS.items():
+            if name != "Vary":
+                response.headers[name] = value
+        vary_tokens = {
+            token.strip()
+            for token in response.headers.get("Vary", "").split(",")
+            if token.strip()
+        }
+        vary_tokens.add("Cookie")
+        response.headers["Vary"] = ", ".join(sorted(vary_tokens, key=str.casefold))
+    return response
+
+
 def apply_security_headers(response) -> None:
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
@@ -171,7 +198,10 @@ def apply_security_headers(response) -> None:
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
     if production:
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        # A response can be served from a customer-owned hostname. Applying
+        # includeSubDomains there would impose HTTPS policy on unrelated
+        # subdomains the customer never delegated to Aperture.
+        response.headers["Strict-Transport-Security"] = "max-age=31536000"
 
 
 app.include_router(customer_auth.router)
@@ -191,9 +221,11 @@ app.include_router(admin_analytics.router)
 app.include_router(admin_homepage.router)
 app.include_router(admin_uploads.router)
 app.include_router(admin_processing.router)
+app.include_router(admin_revenue.router)
 app.include_router(admin_scenes.router)
 app.include_router(admin_support.router)
 app.include_router(admin_playback.router)
+app.include_router(admin_tmdb.router)
 app.include_router(playback.router)
 app.include_router(playback.edge_router)
 if settings.feature_scene_lens_enabled:
@@ -204,9 +236,17 @@ if settings.feature_community_enabled:
     app.include_router(community.router)
     app.include_router(curation.router)
 app.include_router(customer_catalog.router)
+app.include_router(explore.public_router)
+app.include_router(explore.admin_router)
 app.include_router(homepage.router)
+app.include_router(site_brand.public_router)
+app.include_router(site_brand.admin_router)
+app.include_router(site_domains.public_router)
+app.include_router(site_domains.router)
 app.include_router(operations.router)
 app.include_router(operations.admin_router)
+if settings.app_env == "test":
+    app.include_router(e2e_runtime.router)
 
 
 @app.get("/health", tags=["operations"])

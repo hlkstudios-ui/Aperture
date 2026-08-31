@@ -3,8 +3,45 @@ from types import SimpleNamespace
 import pytest
 import stripe
 
-from app.billing import BillingUnavailable, StripeBillingProvider
+from app.billing import (
+    BillingUnavailable,
+    DisabledBillingProvider,
+    StripeBillingProvider,
+    get_billing_provider,
+)
 from app.config import Settings
+
+
+def test_disabled_provider_is_explicit_and_never_calls_stripe(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.billing.get_settings",
+        lambda: SimpleNamespace(
+            billing_provider="disabled",
+            stripe_secret_key="sk_live_unused_must_not_be_called",
+        ),
+    )
+    monkeypatch.setattr(
+        "app.billing.stripe.checkout.Session.create",
+        lambda **_: pytest.fail("disabled billing must not call Stripe Checkout"),
+    )
+    monkeypatch.setattr(
+        "app.billing.stripe.billing_portal.Session.create",
+        lambda **_: pytest.fail("disabled billing must not call Stripe Portal"),
+    )
+
+    provider = get_billing_provider()
+    assert isinstance(provider, DisabledBillingProvider)
+    assert provider.name == "disabled"
+    assert provider.production_ready is False
+    with pytest.raises(BillingUnavailable, match="intentionally disabled"):
+        provider.create_checkout(SimpleNamespace(), SimpleNamespace())
+    with pytest.raises(BillingUnavailable, match="intentionally disabled"):
+        provider.create_portal("cus_unused")
+
+
+def test_unknown_billing_provider_is_rejected() -> None:
+    with pytest.raises(ValueError, match="must be disabled"):
+        Settings(_env_file=None, billing_provider="striep")
 
 
 def test_stripe_checkout_uses_subscription_mode_and_plan_metadata(monkeypatch) -> None:
@@ -30,7 +67,9 @@ def test_stripe_checkout_uses_subscription_mode_and_plan_metadata(monkeypatch) -
         price_cents=1299,
     )
 
-    result = StripeBillingProvider("sk_test_fake_only").create_checkout(user, plan)
+    result = StripeBillingProvider("sk_test_fake_only").create_checkout(
+        user, plan, return_origin="https://watch.customer.example"
+    )
 
     assert result.provider == "stripe"
     assert result.checkout_url == "https://checkout.stripe.test/fake"
@@ -44,7 +83,12 @@ def test_stripe_checkout_uses_subscription_mode_and_plan_metadata(monkeypatch) -
         "user_id": "11111111-1111-1111-1111-111111111111",
         "plan_code": "essential-monthly",
     }
-    assert captured["success_url"] == "https://watch.example.com/account?checkout=success"
+    assert captured["success_url"] == (
+        "https://watch.customer.example/account?checkout=success"
+    )
+    assert captured["cancel_url"] == (
+        "https://watch.customer.example/account?checkout=canceled"
+    )
 
 
 def test_stripe_checkout_fails_closed_without_redirect(monkeypatch) -> None:
@@ -70,6 +114,21 @@ def test_stripe_checkout_fails_closed_without_redirect(monkeypatch) -> None:
         StripeBillingProvider("sk_test_fake_only").create_checkout(user, plan)
 
 
+def test_stripe_rejects_a_non_origin_return_address(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.billing.stripe.checkout.Session.create",
+        lambda **_: pytest.fail("an invalid return address must fail before Stripe"),
+    )
+    user = SimpleNamespace(id="user", email="viewer@example.com")
+    plan = SimpleNamespace(id="plan")
+    with pytest.raises(BillingUnavailable, match="return address"):
+        StripeBillingProvider("sk_test_fake_only").create_checkout(
+            user,
+            plan,
+            return_origin="https://attacker.example/redirect",
+        )
+
+
 def test_stripe_portal_uses_provider_customer_and_safe_return(monkeypatch) -> None:
     captured = {}
 
@@ -82,12 +141,14 @@ def test_stripe_portal_uses_provider_customer_and_safe_return(monkeypatch) -> No
         "app.billing.get_settings",
         lambda: SimpleNamespace(web_origin="https://watch.example.com"),
     )
-    result = StripeBillingProvider("sk_test_fake_only").create_portal("cus_test_fake")
+    result = StripeBillingProvider("sk_test_fake_only").create_portal(
+        "cus_test_fake", return_origin="https://watch.customer.example"
+    )
     assert result.portal_url == "https://billing.stripe.test/fake"
     assert captured == {
         "api_key": "sk_test_fake_only",
         "customer": "cus_test_fake",
-        "return_url": "https://watch.example.com/account",
+        "return_url": "https://watch.customer.example/account",
     }
 
 
@@ -116,6 +177,7 @@ def test_stripe_checkout_redacts_provider_error(monkeypatch) -> None:
 
 def test_stripe_fake_credentials_are_allowed_only_outside_production() -> None:
     staging = Settings(
+        _env_file=None,
         app_env="staging",
         billing_provider="stripe",
         stripe_secret_key="sk_test_fake_only",
@@ -137,6 +199,7 @@ def test_stripe_fake_credentials_are_allowed_only_outside_production() -> None:
 
     with pytest.raises(ValueError, match="live secret key"):
         Settings(
+            _env_file=None,
             app_env="production",
             api_origin="https://watch.example.com/api",
             web_origin="https://watch.example.com",

@@ -39,6 +39,8 @@ def configure_observability(settings: Settings) -> None:
             dsn=settings.error_tracking_dsn,
             environment=settings.app_env,
             send_default_pii=False,
+            include_local_variables=False,
+            max_request_body_size="never",
             traces_sample_rate=0.05,
         )
 

@@ -1,20 +1,35 @@
 {
   "tagOwners": {
-    "tag:aperture-studio": ["autogroup:admin"]
+    "tag:aperture-studio": ["autogroup:owner"],
+    "tag:aperture-ci": ["autogroup:owner"]
   },
   "grants": [
     {
-      "src": ["DUMMY_owner@example.com"],
+      "src": ["autogroup:owner"],
+      "dst": ["autogroup:self"],
+      "ip": ["*"]
+    },
+    {
+      "src": ["autogroup:owner"],
       "dst": ["tag:aperture-studio"],
       "ip": ["tcp:443"]
+    },
+    {
+      "src": ["tag:aperture-ci"],
+      "dst": ["tag:aperture-studio"],
+      "ip": ["tcp:22"]
     }
   ],
-  "ssh": [
+  "tests": [
     {
-      "action": "check",
-      "src": ["DUMMY_owner@example.com"],
-      "dst": ["tag:aperture-studio"],
-      "users": ["autogroup:nonroot"]
+      "src": "DUMMY_owner@example.com",
+      "accept": ["tag:aperture-studio:443"],
+      "deny": ["tag:aperture-studio:22"]
+    },
+    {
+      "src": "tag:aperture-ci",
+      "accept": ["tag:aperture-studio:22"],
+      "deny": ["tag:aperture-studio:443"]
     }
   ]
 }

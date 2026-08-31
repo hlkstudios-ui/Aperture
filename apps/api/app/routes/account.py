@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
@@ -32,6 +32,7 @@ from app.models import (
     SubscriptionStatus,
     User,
 )
+from app.site_domain_service import resolve_request_public_origin
 
 router = APIRouter(
     prefix="/account",
@@ -113,16 +114,24 @@ def dashboard(db: DbSession, user: Customer, current: CurrentSession) -> Account
             production_ready=provider.production_ready,
             checkout_available=provider.production_ready,
             notice=(
-                None
-                if provider.production_ready
-                else "Billing is not configured and never simulates completed payment."
+                None if provider.production_ready else (
+                    "Payments are intentionally disabled for this launch. "
+                    "No payment can be accepted."
+                    if provider.name == "disabled"
+                    else "Billing is not configured and never simulates completed payment."
+                )
             ),
         ),
     )
 
 
 @router.post("/checkout")
-def checkout(payload: CheckoutRequest, db: DbSession, user: Customer) -> dict[str, str]:
+def checkout(
+    payload: CheckoutRequest,
+    request: Request,
+    db: DbSession,
+    user: Customer,
+) -> dict[str, str]:
     existing = db.scalar(
         select(Subscription).where(
             Subscription.user_id == user.id,
@@ -138,14 +147,18 @@ def checkout(payload: CheckoutRequest, db: DbSession, user: Customer) -> dict[st
     if plan is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Subscription plan was not found")
     try:
-        result = get_billing_provider().create_checkout(user, plan)
+        result = get_billing_provider().create_checkout(
+            user,
+            plan,
+            return_origin=resolve_request_public_origin(db, request),
+        )
     except BillingUnavailable as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     return {"provider": result.provider, "checkout_url": result.checkout_url}
 
 
 @router.post("/billing-portal")
-def billing_portal(db: DbSession, user: Customer) -> dict[str, str]:
+def billing_portal(request: Request, db: DbSession, user: Customer) -> dict[str, str]:
     provider = get_billing_provider()
     subscription = db.scalar(
         select(Subscription)
@@ -160,7 +173,10 @@ def billing_portal(db: DbSession, user: Customer) -> dict[str, str]:
     if subscription is None or not subscription.provider_customer_ref:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No provider billing account was found")
     try:
-        result = provider.create_portal(subscription.provider_customer_ref)
+        result = provider.create_portal(
+            subscription.provider_customer_ref,
+            return_origin=resolve_request_public_origin(db, request),
+        )
     except BillingUnavailable as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     return {"provider": result.provider, "portal_url": result.portal_url}

@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.catalog_models import Episode, Movie, Season, Series
 from app.catalog_service import movie_query, series_query
+from app.catalog_visibility import public_title_conditions
 from app.models import (
     AggregatedMetric,
     AnalyticsEventType,
@@ -21,7 +22,7 @@ from app.recommendation_schemas import (
     RecommendationReason,
     RecommendationResponse,
 )
-from app.scheduling import availability_clause, synchronize_due_schedules
+from app.scheduling import synchronize_due_schedules
 
 
 @dataclass
@@ -61,7 +62,7 @@ def recommend(
     movies = list(
         db.scalars(
             movie_query().where(
-                availability_clause(Movie, country=country),
+                *public_title_conditions(Movie, country=country),
                 Movie.metadata_provider.is_(None),
             )
         ).unique()
@@ -69,7 +70,7 @@ def recommend(
     series = list(
         db.scalars(
             series_query().where(
-                availability_clause(Series, country=country),
+                *public_title_conditions(Series, country=country),
                 Series.metadata_provider.is_(None),
             )
         ).unique()

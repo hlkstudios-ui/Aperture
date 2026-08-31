@@ -29,7 +29,7 @@ from app.models import (
 def movie(token: str, suffix: str, genre: Genre) -> Movie:
     record = Movie(
         title=f"Recommendation {suffix} {token}",
-        slug=f"recommendation-{suffix.lower()}-{token}",
+        slug=f"rules-pick-{suffix.lower()}-{token}",
         short_description="An explainable recommendation fixture.",
         synopsis="Original rules-based recommendation test metadata.",
         release_date=date(2026, 1, 1),

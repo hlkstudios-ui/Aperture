@@ -10,7 +10,7 @@ from app.main import app
 def test_health() -> None:
     response = TestClient(app).get("/health", headers={"x-request-id": "health-check-1"})
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "environment": "development"}
+    assert response.json() == {"status": "ok", "environment": get_settings().app_env}
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
     assert response.headers["referrer-policy"] == "no-referrer"
@@ -61,7 +61,7 @@ def test_production_rejects_placeholder_credentials_and_insecure_origins() -> No
             smtp_username="aperture",
             smtp_password="strong-password",
             smtp_from_email="security@example.com",
-            billing_provider="configured_provider",
+            billing_provider="disabled",
         )
 
     with pytest.raises(ValidationError, match="ERROR_TRACKING_DSN"):
@@ -71,6 +71,7 @@ def test_production_rejects_placeholder_credentials_and_insecure_origins() -> No
             api_origin="https://api.example.com",
             web_origin="https://example.com",
             database_url="postgresql+psycopg://service:strong@db.example.com/aperture",
+            s3_public_endpoint=None,
             s3_access_key="production-access-key",
             s3_secret_key="production-secret-key",
             session_secret="a" * 64,
@@ -78,7 +79,7 @@ def test_production_rejects_placeholder_credentials_and_insecure_origins() -> No
             smtp_username="aperture",
             smtp_password="strong-password",
             smtp_from_email="security@example.com",
-            billing_provider="configured_provider",
+            billing_provider="disabled",
             metrics_bearer_token="m" * 64,
         )
 
@@ -97,7 +98,7 @@ def test_production_rejects_placeholder_credentials_and_insecure_origins() -> No
             smtp_username="aperture",
             smtp_password="strong-password",
             smtp_from_email="security@example.com",
-            billing_provider="configured_provider",
+            billing_provider="disabled",
             metrics_bearer_token="m" * 64,
             error_tracking_dsn="https://public@example.ingest.sentry.io/1",
         )
@@ -109,6 +110,7 @@ def test_production_rejects_placeholder_credentials_and_insecure_origins() -> No
             api_origin="http://api.example.com",
             web_origin="https://example.com",
             database_url="postgresql+psycopg://service:strong@db.example.com/aperture",
+            s3_public_endpoint=None,
             s3_access_key="production-access-key",
             s3_secret_key="production-secret-key",
             session_secret="a" * 64,
@@ -116,7 +118,7 @@ def test_production_rejects_placeholder_credentials_and_insecure_origins() -> No
             smtp_username="aperture",
             smtp_password="strong-password",
             smtp_from_email="security@example.com",
-            billing_provider="configured_provider",
+            billing_provider="disabled",
         )
 
 
@@ -127,6 +129,7 @@ def test_production_requires_private_clamav_scanning() -> None:
         "api_origin": "https://watch.example.com/api",
         "web_origin": "https://watch.example.com",
         "database_url": "postgresql+psycopg://service:strong@db.example.com/aperture",
+        "s3_public_endpoint": None,
         "s3_access_key": "production-access-key",
         "s3_secret_key": "production-secret-key",
         "session_secret": "s" * 64,
@@ -134,7 +137,7 @@ def test_production_requires_private_clamav_scanning() -> None:
         "smtp_username": "aperture",
         "smtp_password": "strong-password",
         "smtp_from_email": "security@example.com",
-        "billing_provider": "configured_provider",
+        "billing_provider": "disabled",
         "metrics_bearer_token": "m" * 64,
         "error_tracking_dsn": "https://public@example.ingest.sentry.io/1",
         "media_delivery_mode": "cdn",

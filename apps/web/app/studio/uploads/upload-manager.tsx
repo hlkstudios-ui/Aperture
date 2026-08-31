@@ -2,8 +2,9 @@
 
 import { createSHA256 } from "hash-wasm";
 import { ChangeEvent, useRef, useState, useSyncExternalStore } from "react";
+import { API_GATEWAY_PREFIX } from "@/app/lib/api-gateway";
 
-const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8000";
+const apiOrigin = API_GATEWAY_PREFIX;
 const acceptedTypes = ["video/mp4", "video/webm", "video/quicktime"];
 
 export type MediaAsset = {

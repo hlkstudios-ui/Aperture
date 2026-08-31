@@ -9,8 +9,9 @@ import { featureFlags } from "@/app/lib/feature-flags";
 import { SceneLens } from "./scene-lens";
 import { AfterCreditsRoom } from "./after-credits-room";
 import { clientProgress, saveClientProgress } from "@/app/lib/client-state";
+import { useSiteBrand } from "@/app/components/site-brand-provider";
+import { apiGatewayPath, isGatewayUrl } from "@/app/lib/api-gateway";
 
-const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8000";
 function clock(value: number) {
   if (!Number.isFinite(value)) return "0:00";
   const minutes = Math.floor(value / 60);
@@ -24,6 +25,7 @@ function languageMatches(track: string | undefined, preferred: string | null) {
 }
 
 export function AdaptivePlayer({ config }: { config: PlaybackConfig }) {
+  const brand = useSiteBrand();
   const videoRef = useRef<HTMLVideoElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -82,7 +84,7 @@ export function AdaptivePlayer({ config }: { config: PlaybackConfig }) {
     setProgressState("saving");
     const watched = Math.max(0, Math.min(30, video.currentTime - lastAnalyticsPosition.current));
     try {
-      const response = await fetch(`${apiOrigin}/playback/sources/${config.source_id}/progress`, {
+      const response = await fetch(apiGatewayPath(`/playback/sources/${config.source_id}/progress`), {
         method: "PUT", credentials: "include",
         keepalive: force,
         headers: { "Content-Type": "application/json" },
@@ -105,8 +107,21 @@ export function AdaptivePlayer({ config }: { config: PlaybackConfig }) {
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    const mediaUsesApiSession = new URL(config.manifest_url, window.location.href).origin
-      === new URL(apiOrigin, window.location.href).origin;
+    const mediaUsesApiSession = isGatewayUrl(config.manifest_url, window.location.href);
+    const sourcePath = new URL(config.manifest_url, window.location.href).pathname.toLowerCase();
+    const isDirectVideo = sourcePath.endsWith(".mp4") || sourcePath.endsWith(".webm");
+    if (isDirectVideo) {
+      video.crossOrigin = mediaUsesApiSession ? "use-credentials" : "anonymous";
+      const onReady = () => setStatus("ready");
+      video.addEventListener("canplay", onReady, { once: true });
+      video.src = config.manifest_url;
+      return () => {
+        video.removeEventListener("canplay", onReady);
+        void saveProgress(true);
+        video.removeAttribute("src");
+        video.load();
+      };
+    }
     if (Hls.isSupported()) {
       const hls = new Hls({
         enableWorker: true,
@@ -147,8 +162,8 @@ export function AdaptivePlayer({ config }: { config: PlaybackConfig }) {
       return () => { void saveProgress(true); hls.destroy(); hlsRef.current = null; };
     }
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = config.manifest_url;
       video.crossOrigin = mediaUsesApiSession ? "use-credentials" : "anonymous";
+      video.src = config.manifest_url;
       setStatus("ready");
     } else { setStatus("error"); setError("Adaptive playback is not supported in this browser."); }
   }, [config.duration_seconds, config.episode_id, config.manifest_url, config.movie_id, config.original_language_code, config.preferred_audio_language, config.preferred_subtitle_language, config.subtitles_enabled, preferredSubtitleIndex, preferredSecondarySubtitleIndex, saveProgress]);
@@ -174,7 +189,7 @@ export function AdaptivePlayer({ config }: { config: PlaybackConfig }) {
     if (!("mediaSession" in navigator)) return;
     navigator.mediaSession.metadata = new MediaMetadata({
       title: config.title,
-      album: config.subtitle ?? "Aperture",
+      album: config.subtitle ?? brand.business_name,
     });
     const video = () => videoRef.current;
     navigator.mediaSession.setActionHandler("play", () => void video()?.play());
@@ -196,7 +211,7 @@ export function AdaptivePlayer({ config }: { config: PlaybackConfig }) {
         navigator.mediaSession.setActionHandler(action, null);
       }
     };
-  }, [config.subtitle, config.title]);
+  }, [brand.business_name, config.subtitle, config.title]);
 
   const marker = config.intro && time >= config.intro[0] && time < config.intro[1] ? { label: "Skip intro", end: config.intro[1] } : config.recap && time >= config.recap[0] && time < config.recap[1] ? { label: "Skip recap", end: config.recap[1] } : config.credits_start_seconds !== null && time >= config.credits_start_seconds ? { label: "Skip credits", end: duration } : null;
   function retry() { setError(""); setStatus("loading"); hlsRef.current?.startLoad(); void videoRef.current?.play(); }
@@ -216,7 +231,7 @@ export function AdaptivePlayer({ config }: { config: PlaybackConfig }) {
   function chooseSecondarySubtitle(value: number) { const secondary = value === subtitleTrack ? -1 : value; setSecondarySubtitleTrack(secondary); applySubtitleTracks(subtitleTrack, secondary); }
 
   return <main className="watch-page"><div className={`player-shell captions-${config.caption_size} captions-${config.caption_background} captions-${config.caption_position}`} ref={shellRef}>
-    <video ref={videoRef} playsInline preload="metadata" crossOrigin="use-credentials"
+    <video ref={videoRef} playsInline preload="metadata"
       onLoadedMetadata={(event) => { const video = event.currentTarget; setDuration(video.duration); const localResume = clientProgress(config.source_id)?.position_seconds ?? 0; const resume = config.progress?.position_seconds ?? localResume; if (resume > 0 && resume < video.duration - 1) video.currentTime = resume; }}
       onPlay={(event) => { setPlaying(true); setLensReady(false); if (!playStartSent.current) { playStartSent.current = true; const video = event.currentTarget; void trackAnalytics({ event_type: "play_start", movie_id: config.movie_id, episode_id: config.episode_id, position_seconds: video.currentTime, duration_seconds: video.duration, properties: { source: "customer_player" } }); } }}
       onPause={(event) => { setPlaying(false); setLensReady(true); void saveProgress(true); const video = event.currentTarget; if (video.duration > 0) void trackAnalytics({ event_type: "pause", movie_id: config.movie_id, episode_id: config.episode_id, position_seconds: video.currentTime, duration_seconds: video.duration }); }}

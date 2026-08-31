@@ -11,12 +11,15 @@ from sqlalchemy import delete
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from e2e_guard import require_e2e_test_environment  # noqa: E402
+
 from app.db import SessionLocal  # noqa: E402
 from app.homepage_service import get_configuration  # noqa: E402
 from app.models import HomepageRail  # noqa: E402
 
 
 def main() -> None:
+    require_e2e_test_environment()
     command = json.load(sys.stdin)
     with SessionLocal() as db:
         config = get_configuration(db)

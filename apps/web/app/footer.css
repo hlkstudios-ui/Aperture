@@ -1,0 +1,781 @@
+/*
+ * THE CLOSING IRIS
+ *
+ * The public site does not end with a boxed sitemap. The preceding page fades
+ * through a projection-like threshold before the directory resolves as end
+ * credits. Everything remains complete and usable without animation support.
+ */
+
+.site-footer.closing-iris {
+  --footer-bg: var(--brand-surface, #080706);
+  --footer-surface: var(--brand-surface-elevated, #0c0a09);
+  --footer-ink: var(--brand-text, #f5eee6);
+  --footer-muted: var(--brand-text-muted, #aaa198);
+  --footer-line: color-mix(in srgb, var(--footer-ink) 12%, transparent);
+  --footer-accent: var(--brand-accent, #ef755f);
+  position: relative;
+  isolation: isolate;
+  display: block;
+  overflow: clip;
+  margin-block-start: clamp(-7rem, -8vw, -4rem);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--footer-ink);
+  pointer-events: none;
+}
+
+.closing-iris > :not(.closing-iris__threshold) {
+  pointer-events: auto;
+}
+
+.closing-iris__threshold {
+  position: relative;
+  z-index: 0;
+  height: clamp(18rem, 31vw, 31rem);
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 50% 92%, rgba(206, 73, 49, 0.16), transparent 38%),
+    linear-gradient(180deg, transparent 0%, rgba(8, 7, 6, 0.08) 15%, rgba(8, 7, 6, 0.72) 58%, var(--footer-bg) 100%);
+  pointer-events: none;
+}
+
+.closing-iris__threshold::before,
+.closing-iris__threshold::after {
+  position: absolute;
+  content: "";
+  pointer-events: none;
+}
+
+.closing-iris__threshold::before {
+  inset: 12% 0 0;
+  background:
+    linear-gradient(103deg, transparent 15%, rgba(255, 187, 160, 0.035) 50%, transparent 82%),
+    repeating-linear-gradient(90deg, transparent 0 8vw, rgba(255, 255, 255, 0.016) 8vw calc(8vw + 1px));
+  clip-path: polygon(42% 0, 58% 0, 82% 100%, 18% 100%);
+  opacity: 0.85;
+}
+
+.closing-iris__threshold::after {
+  inset-inline: 7vw;
+  inset-block-end: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(239, 117, 95, 0.42), transparent);
+}
+
+.closing-iris__beam {
+  position: absolute;
+  inset-inline-start: 50%;
+  inset-block-end: -30%;
+  width: min(85vw, 76rem);
+  aspect-ratio: 1.8;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(238, 111, 87, 0.1), rgba(107, 42, 31, 0.025) 48%, transparent 70%);
+  transform: translateX(-50%);
+}
+
+.closing-iris__lens {
+  position: absolute;
+  inset-inline-start: 50%;
+  inset-block-end: clamp(-23rem, -25vw, -12rem);
+  display: grid;
+  width: min(66vw, 52rem);
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 7deg, rgba(239, 117, 95, 0.32) 0 25deg, rgba(80, 31, 23, 0.12) 26deg 51deg);
+  box-shadow: 0 0 0 1px rgba(255, 167, 144, 0.08), inset 0 0 7rem rgba(0, 0, 0, 0.72);
+  opacity: 0.7;
+  transform: translateX(-50%) rotate(-8deg) scale(0.9);
+  -webkit-mask: radial-gradient(circle, transparent 0 32%, #000 32.5% 48%, transparent 69%);
+  mask: radial-gradient(circle, transparent 0 32%, #000 32.5% 48%, transparent 69%);
+}
+
+.closing-iris__lens i {
+  width: 22%;
+  aspect-ratio: 1;
+  border: 1px solid rgba(255, 210, 195, 0.2);
+  border-radius: 50%;
+}
+
+.closing-iris__frame {
+  position: absolute;
+  inset-block-end: 15%;
+  width: 18vw;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1));
+}
+
+.closing-iris__frame--left {
+  inset-inline-start: 4vw;
+}
+
+.closing-iris__frame--right {
+  inset-inline-end: 4vw;
+  transform: scaleX(-1);
+}
+
+.closing-iris__stage {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(22rem, 0.85fr);
+  gap: clamp(4rem, 8vw, 9rem);
+  padding: clamp(2rem, 5vw, 5rem) max(5vw, env(safe-area-inset-right)) clamp(5rem, 8vw, 8rem) max(5vw, env(safe-area-inset-left));
+  background:
+    radial-gradient(circle at 13% 20%, rgba(143, 51, 36, 0.12), transparent 25rem),
+    linear-gradient(180deg, var(--footer-bg), var(--footer-surface));
+}
+
+.closing-iris__manifesto {
+  max-width: 51rem;
+}
+
+.closing-iris__kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin: 0 0 clamp(1.5rem, 3vw, 3rem);
+  color: var(--footer-accent);
+  font-family: var(--font-metadata);
+  font-size: 0.875rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+.closing-iris__kicker span:last-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--footer-muted);
+}
+
+.closing-iris__kicker span:last-child::before {
+  width: clamp(2.5rem, 5vw, 5rem);
+  height: 1px;
+  background: linear-gradient(90deg, var(--footer-accent), transparent);
+  content: "";
+}
+
+.closing-iris__manifesto h2 {
+  max-width: 10ch;
+  margin: 0;
+  color: var(--footer-ink);
+  font-family: var(--font-editorial);
+  font-size: clamp(3.5rem, 6.7vw, 7.8rem);
+  font-weight: 470;
+  letter-spacing: -0.052em;
+  line-height: 0.88;
+  text-wrap: balance;
+}
+
+.closing-iris__lede {
+  max-width: 37rem;
+  margin: clamp(1.8rem, 3vw, 3rem) 0 0;
+  color: #c0b7ae;
+  font-family: var(--font-body);
+  font-size: clamp(1rem, 1.3vw, 1.1875rem);
+  line-height: 1.68;
+}
+
+.site-footer .closing-iris__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-block-start: clamp(2rem, 4vw, 3.5rem);
+}
+
+.closing-iris a {
+  text-decoration: none;
+}
+
+.site-footer .closing-iris__primary,
+.site-footer .closing-iris__secondary {
+  display: inline-flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.75rem 1.1rem 0.75rem 1.25rem;
+  border: 1px solid var(--footer-line);
+  border-radius: 999px;
+  color: var(--footer-ink);
+  font-family: var(--font-ui);
+  font-size: 0.9375rem;
+  font-weight: 750;
+  line-height: 1.3;
+  transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease;
+}
+
+.site-footer .closing-iris__primary {
+  border-color: var(--footer-accent);
+  background: linear-gradient(135deg, var(--brand-accent, var(--accent)), var(--brand-accent-hover, var(--accent-hover)));
+  color: var(--brand-on-accent, var(--on-accent));
+  box-shadow: 0 12px 40px rgba(118, 39, 28, 0.22), inset 0 1px rgba(255, 255, 255, 0.15);
+}
+
+.site-footer .closing-iris__secondary {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.closing-iris__actions svg,
+.closing-iris__index svg,
+.closing-iris__top svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+  transition: transform 180ms ease;
+}
+
+.site-footer .closing-iris__primary:hover,
+.site-footer .closing-iris__primary:focus-visible,
+.site-footer .closing-iris__secondary:hover,
+.site-footer .closing-iris__secondary:focus-visible {
+  border-color: var(--footer-accent);
+  background-color: rgba(239, 117, 95, 0.1);
+}
+
+.closing-iris__actions a:hover svg,
+.closing-iris__actions a:focus-visible svg {
+  transform: translateX(4px);
+}
+
+.site-footer .closing-iris__index {
+  display: grid;
+  gap: 0;
+  align-content: start;
+  border-block-start: 1px solid var(--footer-line);
+}
+
+.closing-iris__index-row {
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr);
+  gap: 1rem;
+  padding-block: 1.45rem;
+  border-block-end: 1px solid var(--footer-line);
+}
+
+.closing-iris__index-row header {
+  display: grid;
+  grid-template-columns: 2.25rem 1fr;
+  align-items: baseline;
+  gap: 0.55rem;
+}
+
+.closing-iris__index-row header > span {
+  color: var(--footer-accent);
+  font-family: var(--font-data);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.closing-iris__index-row h3 {
+  margin: 0;
+  color: var(--footer-ink);
+  font-family: var(--font-ui) !important;
+  font-size: 0.875rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.closing-iris__index-row > div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.closing-iris__index-row a {
+  position: relative;
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-inline: 0.15rem;
+  color: #b8afa6;
+  font-family: var(--font-ui);
+  font-size: 0.9375rem;
+  line-height: 1.35;
+  transition: color 160ms ease;
+}
+
+.closing-iris__index-row a::before {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0.3rem;
+  height: 1px;
+  background: linear-gradient(90deg, var(--footer-accent), transparent 72%);
+  content: "";
+  opacity: 0;
+  transform: scaleX(0.35);
+  transform-origin: left;
+  transition: opacity 160ms ease, transform 180ms ease;
+}
+
+.closing-iris__index-row a svg {
+  opacity: 0.35;
+}
+
+.closing-iris__index-row a:hover,
+.closing-iris__index-row a:focus-visible {
+  color: var(--footer-ink);
+}
+
+.closing-iris__index-row a:hover::before,
+.closing-iris__index-row a:focus-visible::before {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.closing-iris__index-row a:hover svg,
+.closing-iris__index-row a:focus-visible svg {
+  opacity: 1;
+  transform: translateX(4px);
+}
+
+.closing-iris__signature {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  overflow: hidden;
+  justify-content: center;
+  padding: clamp(1rem, 2vw, 2rem) 2vw 0;
+  background: var(--footer-surface);
+}
+
+.closing-iris__signature::before {
+  position: absolute;
+  inset-inline: 6vw;
+  inset-block-start: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--footer-line) 18% 82%, transparent);
+  content: "";
+}
+
+.closing-iris__signature span {
+  color: rgba(245, 238, 230, 0.035);
+  font-family: var(--font-ui);
+  font-size: clamp(5rem, 17.2vw, 18rem);
+  font-weight: 900;
+  letter-spacing: -0.07em;
+  line-height: 0.8;
+  white-space: nowrap;
+  -webkit-text-stroke: 1px rgba(245, 238, 230, 0.13);
+}
+
+.closing-iris__ledger {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(14rem, 1fr) auto auto;
+  align-items: center;
+  gap: clamp(1.5rem, 4vw, 4rem);
+  padding: 2rem max(5vw, env(safe-area-inset-right)) max(2rem, calc(env(safe-area-inset-bottom) + 1.5rem)) max(5vw, env(safe-area-inset-left));
+  background: var(--footer-surface);
+  border-block-start: 1px solid var(--footer-line);
+}
+
+.closing-iris__lockup {
+  display: flex;
+  min-height: 44px;
+  min-width: 0;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.closing-iris__lockup > i {
+  position: relative;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  overflow: hidden;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(248, 132, 109, 0.7);
+  border-radius: 50%;
+  background: #21110e;
+  box-shadow: inset 0 0 0 3px rgba(4, 4, 4, 0.52);
+}
+
+.closing-iris__brand-image {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--footer-accent), transparent 32%);
+  border-radius: 50%;
+  background-color: var(--footer-surface);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+}
+
+.closing-iris__generated-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+}
+
+.closing-iris__generated-mark svg {
+  width: 100%;
+  height: 100%;
+}
+
+.closing-iris__lockup > i::before {
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 8deg, #f2735b 0 28deg, #743124 29deg 58deg);
+  content: "";
+}
+
+.closing-iris__lockup > i::after {
+  position: absolute;
+  inset: 11px;
+  border: 1px solid rgba(255, 205, 190, 0.72);
+  border-radius: 50%;
+  background: #080707;
+  content: "";
+}
+
+.closing-iris__lockup > i span {
+  position: relative;
+  z-index: 1;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #fff7ef;
+}
+
+.closing-iris__lockup > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.closing-iris__lockup strong {
+  color: var(--footer-ink);
+  font-family: var(--font-ui);
+  font-size: 0.875rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.closing-iris__lockup small,
+.closing-iris__legal,
+.closing-iris__legal small {
+  color: var(--footer-muted);
+  font-family: var(--font-metadata);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.closing-iris__legal,
+.site-footer .closing-iris__legal nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem 1rem;
+}
+
+.site-footer .closing-iris__legal > small {
+  margin-inline-start: 0;
+}
+
+.closing-iris__legal a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--footer-muted);
+}
+
+.closing-iris__legal a:hover,
+.closing-iris__legal a:focus-visible {
+  color: var(--footer-ink);
+}
+
+.site-footer .closing-iris__top {
+  display: inline-flex;
+  min-width: max-content;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--footer-line);
+  border-radius: 999px;
+  color: var(--footer-ink);
+  font-family: var(--font-ui);
+  font-size: 0.875rem;
+  font-weight: 750;
+}
+
+.closing-iris__top:hover svg,
+.closing-iris__top:focus-visible svg {
+  transform: translateY(-3px);
+}
+
+.closing-iris a:focus-visible {
+  outline: 3px solid #ff9c88;
+  outline-offset: 3px;
+}
+
+/* The client adds the ready class only after it has measured the footer.
+   Without JavaScript every element remains visible; with it, three bounded
+   IntersectionObserver reveals animate only composited properties. */
+.closing-iris--motion-ready .closing-iris__lens {
+  transition: opacity 700ms ease, transform 900ms cubic-bezier(0.2, 0.75, 0.2, 1);
+}
+
+.closing-iris--motion-ready:not(.closing-iris--threshold-entered) .closing-iris__lens {
+  opacity: 0.1;
+  transform: translateX(-50%) rotate(-8deg) scale(0.82);
+}
+
+.closing-iris--motion-ready .closing-iris__manifesto,
+.closing-iris--motion-ready .closing-iris__index {
+  transition: opacity 600ms ease, transform 720ms cubic-bezier(0.2, 0.75, 0.2, 1);
+}
+
+.closing-iris--motion-ready .closing-iris__index {
+  transition-delay: 90ms;
+}
+
+.closing-iris--motion-ready:not(.closing-iris--stage-entered) .closing-iris__manifesto,
+.closing-iris--motion-ready:not(.closing-iris--stage-entered) .closing-iris__index {
+  opacity: 0;
+  transform: translateY(34px);
+}
+
+.closing-iris--motion-ready .closing-iris__signature span {
+  transition: opacity 600ms ease, transform 720ms cubic-bezier(0.2, 0.75, 0.2, 1);
+}
+
+.closing-iris--motion-ready:not(.closing-iris--signature-entered) .closing-iris__signature span {
+  opacity: 0.15;
+  transform: translateY(28%);
+}
+
+/* Immersive, authentication, and owner-only surfaces end inside their own
+   experience. The public closing sequence never advertises itself there. */
+html.signal-run-ball-open .site-footer,
+body:has(.game-route) .site-footer,
+body:has(.watch-page) .site-footer,
+body:has([data-hide-public-footer]) .site-footer,
+body:has(.login-shell) .site-footer,
+body:has(.viewer-auth-shell) .site-footer,
+body:has(.profiles-shell) .site-footer {
+  display: none;
+}
+
+@media (max-width: 930px) {
+  .cinematic-mobile-dock {
+    transition: opacity 180ms ease, transform 220ms ease, visibility 0s linear 220ms;
+  }
+
+  html.aperture-footer-open .cinematic-mobile-dock {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(calc(100% + 1rem));
+    transition-delay: 0s;
+  }
+}
+
+@media (max-width: 980px) {
+  .closing-iris__stage {
+    grid-template-columns: 1fr;
+  }
+
+  .closing-iris__manifesto {
+    max-width: 48rem;
+  }
+
+  .closing-iris__manifesto h2 {
+    max-width: 11ch;
+  }
+
+  .closing-iris__index-row {
+    grid-template-columns: 9rem minmax(0, 1fr);
+  }
+
+  .closing-iris__index-row > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 1.25rem;
+  }
+
+  .closing-iris__ledger {
+    grid-template-columns: 1fr auto;
+  }
+
+  .closing-iris__legal {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: start;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 700px) {
+  .site-footer.closing-iris {
+    margin-block-start: -3.5rem;
+  }
+
+  .closing-iris__threshold {
+    height: 16rem;
+  }
+
+  .closing-iris__lens {
+    inset-block-end: -8rem;
+    width: min(94vw, 28rem);
+  }
+
+  .closing-iris__stage {
+    gap: 4rem;
+    padding-block-start: 1rem;
+  }
+
+  .closing-iris__manifesto h2 {
+    font-size: clamp(3rem, 14.5vw, 5.2rem);
+    line-height: 0.92;
+  }
+
+  .site-footer .closing-iris__actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .site-footer .closing-iris__primary,
+  .site-footer .closing-iris__secondary {
+    width: 100%;
+    min-height: 54px;
+  }
+
+  .closing-iris__index-row {
+    grid-template-columns: 1fr;
+    gap: 0.7rem;
+    padding-block: 1.65rem;
+  }
+
+  .closing-iris__index-row > div {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .closing-iris__index-row a {
+    min-height: 48px;
+    padding-inline: 0;
+  }
+
+  .closing-iris__signature {
+    justify-content: flex-start;
+    padding-inline: max(5vw, env(safe-area-inset-left));
+  }
+
+  .closing-iris__signature span {
+    font-size: 21vw;
+    letter-spacing: -0.075em;
+  }
+
+  .closing-iris__ledger {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+    padding-block-end: max(6.5rem, calc(env(safe-area-inset-bottom) + 5.5rem));
+  }
+
+  .closing-iris__legal,
+  .site-footer .closing-iris__legal nav {
+    grid-column: auto;
+    grid-row: auto;
+    justify-self: stretch;
+    justify-content: flex-start;
+  }
+
+  .site-footer .closing-iris__top {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .closing-iris *,
+  .closing-iris *::before,
+  .closing-iris *::after {
+    animation: none !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .closing-iris__lens,
+  .closing-iris__manifesto,
+  .closing-iris__index,
+  .closing-iris__signature span {
+    opacity: 1;
+    transform: none;
+  }
+
+  .closing-iris__lens {
+    transform: translateX(-50%);
+  }
+
+  .cinematic-mobile-dock {
+    transition: none !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .site-footer.closing-iris {
+    --footer-muted: #d4ccc4;
+    --footer-line: rgba(255, 255, 255, 0.42);
+  }
+
+  .closing-iris__threshold {
+    background: linear-gradient(180deg, transparent, var(--footer-bg) 74%);
+  }
+}
+
+@media (forced-colors: active) {
+  .site-footer.closing-iris,
+  .closing-iris__stage,
+  .closing-iris__signature,
+  .closing-iris__ledger {
+    color: CanvasText;
+    background: Canvas;
+  }
+
+  .site-footer.closing-iris {
+    margin-block-start: 0;
+  }
+
+  .closing-iris__threshold,
+  .closing-iris__signature,
+  .closing-iris__lockup > i {
+    display: none;
+  }
+
+  .closing-iris a,
+  .closing-iris__lede,
+  .closing-iris__legal,
+  .closing-iris__lockup small {
+    color: LinkText;
+  }
+
+  .closing-iris__index,
+  .closing-iris__index-row,
+  .closing-iris__ledger,
+  .site-footer .closing-iris__primary,
+  .site-footer .closing-iris__secondary,
+  .site-footer .closing-iris__top {
+    border-color: CanvasText;
+  }
+}

@@ -1,1 +1,63 @@
 .viewer-auth-shell{position:relative;overflow:hidden}.viewer-auth-shell:before{position:fixed;inset:0;content:"";pointer-events:none;background:linear-gradient(115deg,rgba(0,0,0,.22),transparent),radial-gradient(circle at 80% 20%,rgba(211,91,69,.1),transparent 26%)}.viewer-auth-card{position:relative;width:min(610px,100%);margin-top:6vh;padding:2.7rem;border-color:rgba(255,255,255,.12);border-radius:24px;box-shadow:0 42px 120px rgba(0,0,0,.55);backdrop-filter:blur(18px)}.viewer-auth-card h1{max-width:500px;font-size:clamp(2.35rem,5vw,3.5rem)}.social-auth{margin-top:1.65rem}.social-auth>p{margin:0 0 .75rem;color:#8f8983;font-size:.7rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.social-auth-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem}.social-provider{position:relative;display:flex;min-height:52px;align-items:center;gap:.7rem;padding:.7rem .85rem;border:1px solid rgba(255,255,255,.11);border-radius:13px;color:#f7f3ef;background:linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025));font-size:.82rem;font-weight:800;transition:transform .18s ease,border-color .18s ease,background .18s ease}.social-provider:not(.is-unavailable):hover{transform:translateY(-2px);border-color:rgba(229,116,94,.55);background:rgba(229,116,94,.1)}.social-provider i{display:grid;width:30px;height:30px;place-items:center;border-radius:9px;color:#161413;background:#f2eee9;font-style:normal;font-size:.92rem;font-weight:900}.provider-microsoft i{color:#e76854}.provider-github i{color:#111}.social-provider small{margin-left:auto;padding:3px 6px;border-radius:999px;color:#9b938c;background:rgba(255,255,255,.05);font-size:.55rem;letter-spacing:.08em;text-transform:uppercase}.social-provider.is-unavailable{opacity:.48;cursor:not-allowed}.auth-divider{display:flex;align-items:center;gap:.8rem;margin:1.35rem 0 -.6rem;color:#77716c;font-size:.68rem;text-transform:uppercase;letter-spacing:.09em}.auth-divider:before,.auth-divider:after{height:1px;flex:1;content:"";background:rgba(255,255,255,.09)}.captcha-local{display:flex;align-items:center;gap:.8rem;margin-top:1rem;padding:.8rem;border:1px solid rgba(99,189,135,.25);border-radius:12px;background:rgba(68,145,99,.08)}.captcha-local>span{display:grid;width:28px;height:28px;place-items:center;border-radius:50%;color:#bfe7cb;background:rgba(86,174,121,.18)}.captcha-local div{display:grid;gap:2px}.captcha-local strong{color:#d9eade;font-size:.72rem}.captcha-local small{color:#7e9987;font-size:.62rem}.captcha-widget{margin-top:1rem;min-height:65px}.auth-privacy{margin:1.25rem 0 0;color:#6f6964;font-size:.62rem;line-height:1.5;text-align:center}@media(max-width:600px){.viewer-auth-card{padding:1.5rem}.social-auth-grid{grid-template-columns:1fr}}
+
+/* The cinematic desktop split becomes a single readable column on narrow screens. */
+@media (max-width: 760px) {
+  .viewer-auth-shell {
+    display: block;
+    min-height: 100dvh;
+    padding: max(4.75rem, env(safe-area-inset-top)) 1rem max(2rem, env(safe-area-inset-bottom));
+    overflow-x: clip;
+    overflow-y: auto;
+    perspective: none;
+  }
+
+  .viewer-auth-shell::before {
+    inset: 0;
+    width: auto;
+    background: radial-gradient(circle at 50% 5%, rgba(211,91,69,.16), transparent 32rem);
+    box-shadow: none;
+  }
+
+  .viewer-auth-shell::after {
+    left: 50%;
+    top: 8rem;
+    width: min(92vw, 420px);
+    height: min(92vw, 420px);
+    opacity: .44;
+  }
+
+  .viewer-auth-shell > .wordmark {
+    position: relative;
+    z-index: 21;
+    display: inline-flex;
+    margin: 0 0 1.25rem;
+  }
+
+  .viewer-auth-card {
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    padding: clamp(1.35rem, 6vw, 2rem);
+    border-radius: 22px;
+    justify-content: flex-start;
+  }
+
+  .viewer-auth-card::before {
+    position: absolute;
+    width: 100%;
+  }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .viewer-auth-shell {
+    min-height: 100dvh;
+    padding: max(.8rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+    overflow-x: clip;
+    overflow-y: auto;
+  }
+
+  .viewer-auth-shell > .wordmark { margin: 0 0 .75rem; }
+  .viewer-auth-card { height: auto; min-height: 0; margin: 0; padding: 1.25rem 1.5rem; justify-content: flex-start; }
+  .viewer-auth-card h1 { font-size: clamp(2rem, 7vw, 2.8rem); }
+}

@@ -50,7 +50,7 @@ test("provisioned administrator can sign in and reach the server-authorized Stud
   await page.getByRole("button", { name: "Enter Studio" }).click();
 
   await expect(page).toHaveURL(/\/studio$/);
-  await expect(page.getByRole("heading", { name: "Good evening." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "The projection room" })).toBeVisible();
   await expect(page.getByText(`Signed in as ${email}`)).toBeVisible();
   await page.goto("/studio/operations");
   await expect(page).toHaveURL(/\/studio\/operations$/);

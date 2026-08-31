@@ -1,6 +1,7 @@
 """Read-only Hostinger VPS audit with stable, secret-free JSON output."""
 
 import argparse
+import ipaddress
 import json
 import os
 import subprocess
@@ -14,6 +15,8 @@ CHECKS = (
     "docker_live_restore", "docker_no_new_privileges", "docker_log_rotation",
     "encrypted_volume_evidence",
 )
+MEMORY_PROVISIONING_ALLOWANCE_GB = 1
+DISK_OBSERVED_PERCENT = 95
 
 
 def run(command: list[str]) -> str:
@@ -54,6 +57,39 @@ def collect() -> dict:
     }
 
 
+def observed_capacity_floors(config: dict[str, str]) -> dict[str, int]:
+    """Translate provider-labeled plan capacity into safe guest-visible audit floors."""
+    labeled_memory = int(config["HOST_MIN_MEMORY_GB"])
+    labeled_disk = int(config["HOST_MIN_DISK_GB"])
+    return {
+        "memory_gb": max(1, labeled_memory - MEMORY_PROVISIONING_ALLOWANCE_GB),
+        "disk_gb": max(1, (labeled_disk * DISK_OBSERVED_PERCENT + 99) // 100),
+    }
+
+
+def ssh_firewall_is_restricted(ufw: str, allowed_cidr: str) -> bool:
+    """Require an exact SSH allowlist rule and reject any world-open SSH rule."""
+    allowed = ipaddress.ip_network(allowed_cidr, strict=False)
+    exact_rule = False
+    world_rule = False
+    for raw in ufw.splitlines():
+        tokens = raw.lower().split()
+        if not tokens or not tokens[0].startswith("22/tcp") or "allow" not in tokens:
+            continue
+        if "anywhere" in tokens:
+            world_rule = True
+        for token in tokens:
+            try:
+                source = ipaddress.ip_network(token.strip("(),"), strict=False)
+            except ValueError:
+                continue
+            if source.prefixlen == 0:
+                world_rule = True
+            if source == allowed:
+                exact_rule = True
+    return exact_rule and not world_rule
+
+
 def evaluate(evidence: dict, config: dict[str, str]) -> dict[str, bool]:
     ufw = evidence.get("ufw", "")
     daemon = evidence.get("docker_daemon", {})
@@ -61,11 +97,12 @@ def evaluate(evidence: dict, config: dict[str, str]) -> dict[str, bool]:
     ssh = evidence.get("ssh", {})
     services = evidence.get("services", {})
     allowed = config["SSH_ALLOWED_CIDR"].lower()
+    observed_floors = observed_capacity_floors(config)
     return {
         "ubuntu_24_04": evidence.get("os_id") == "ubuntu" and evidence.get("os_version") == "24.04",
         "hostname": evidence.get("hostname") == config["EXPECTED_HOSTNAME"],
-        "memory_capacity": evidence.get("memory_gb", 0) >= int(config["HOST_MIN_MEMORY_GB"]),
-        "disk_capacity": evidence.get("disk_gb", 0) >= int(config["HOST_MIN_DISK_GB"]),
+        "memory_capacity": evidence.get("memory_gb", 0) >= observed_floors["memory_gb"],
+        "disk_capacity": evidence.get("disk_gb", 0) >= observed_floors["disk_gb"],
         "disk_free": evidence.get("disk_free_gb", 0) >= int(config["HOST_MIN_FREE_DISK_GB"]),
         "time_sync": evidence.get("time_synced") is True,
         "automatic_updates": services.get("unattended-upgrades") is True,
@@ -77,7 +114,7 @@ def evaluate(evidence: dict, config: dict[str, str]) -> dict[str, bool]:
         "firewall_active": "status: active" in ufw,
         "firewall_default_deny": "default: deny (incoming)" in ufw,
         "firewall_public_ports": "80/tcp" in ufw and "443/tcp" in ufw and "443/udp" in ufw,
-        "firewall_ssh_restricted": "22/tcp" in ufw and allowed in ufw and "22/tcp                   allow       anywhere" not in ufw,
+        "firewall_ssh_restricted": ssh_firewall_is_restricted(ufw, allowed),
         "docker_live_restore": daemon.get("live-restore") is True,
         "docker_no_new_privileges": daemon.get("no-new-privileges") is True,
         "docker_log_rotation": daemon.get("log-driver") == "json-file" and log_opts.get("max-size") == "10m" and log_opts.get("max-file") == "5",

@@ -9,7 +9,8 @@ The API release image contains `scripts/production_preflight.py`. Run it with se
 
 Recommended release order:
 
-1. Resolve immutable web/API/worker image digests.
+1. Resolve the eight immutable Hostinger artifact digests: web, API, media worker, backup, Caddy,
+   storage, node exporter, and Blackbox. Bind the Scene worker to the API digest.
 2. Run the API image with `python scripts/production_preflight.py --configuration-only`. This verifies that the effective settings pass the application's production validation without contacting dependencies.
 3. Run `alembic upgrade head` as the one-shot migration identity.
 4. Run `python scripts/production_preflight.py` as a read-only validation identity.
@@ -23,8 +24,9 @@ The full preflight fails unless:
 - Redis accepts an authenticated ping;
 - object storage is reachable, versioning is enabled, ACLs are private, and the provider can prove that no bucket policy grants anonymous read/list access;
 - SMTP TLS/authentication succeeds without sending a message.
-- Stripe accepts a read-only authenticated account lookup; no Checkout, charge, customer,
-  subscription, or webhook mutation is performed by preflight.
+- Billing either reports the explicitly approved `payments_intentionally_disabled` state without
+  contacting Stripe, or Stripe accepts a read-only authenticated account lookup. Preflight never
+  creates a Checkout, charge, customer, subscription, or webhook mutation.
 - the private ClamAV-compatible endpoint accepts a clamd PING; no object is submitted or
   mutated by preflight.
 
@@ -43,7 +45,8 @@ python3 deploy/production/launch_evidence.py --mode dummy \
 
 It must report `no_go` with all six gates remaining. When production evidence exists, copy
 the example to the git-ignored `launch-evidence.local.json`, change `environment` to
-`production`, bind the exact release, four image digests, migration head, infrastructure
+`production`, bind the exact release and all nine component image-digest bindings (the Hostinger
+Scene worker reuses the API digest, so its nine bindings represent eight built artifacts), migration head, infrastructure
 version, owners, approvals, and evidence references, then run:
 
 ```bash
@@ -59,13 +62,13 @@ references in the JSON—never credentials, signed URLs, session identifiers, re
 or provider tokens.
 
 After the public edge exists, run the credential-free smoke verifier with the exact HTTPS
-web and API bases. It checks TLS validation, required security headers, request-ID
-propagation, dependency readiness, fail-closed protected surfaces, and hidden production
-API documentation without creating accounts or changing state:
+storefront origin. It checks TLS validation, required security headers, request-ID
+propagation, dependency readiness, the private/no-store same-origin gateway contract,
+closed direct API paths, and hidden production API documentation without creating accounts
+or changing state:
 
 ```bash
 SMOKE_WEB_ORIGIN=https://watch.example.com \
-SMOKE_API_ORIGIN=https://watch.example.com/api \
 python3 deploy/production/public_edge_smoke.py --environment production
 ```
 

@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 
 export type ViewerProfile = {
   id: string;
@@ -34,7 +35,7 @@ export type ViewerAccount = {
   active_profile_id: string | null;
 };
 
-export async function requireCustomerSession(): Promise<ViewerAccount> {
+export const requireCustomerSession = cache(async (): Promise<ViewerAccount> => {
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get("aperture_session");
   if (!sessionCookie) redirect("/login");
@@ -50,4 +51,4 @@ export async function requireCustomerSession(): Promise<ViewerAccount> {
   }
   if (!response.ok) redirect("/login?error=session-expired");
   return response.json() as Promise<ViewerAccount>;
-}
+});

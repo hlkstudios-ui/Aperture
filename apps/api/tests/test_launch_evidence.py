@@ -4,6 +4,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 ROOT = Path(__file__).parents[3]
 SCRIPT = ROOT / "deploy/production/launch_evidence.py"
@@ -15,6 +17,13 @@ SPEC.loader.exec_module(launch_evidence)
 
 def example() -> dict:
     return json.loads((ROOT / "deploy/production/launch-evidence.example.json").read_text())
+
+
+def test_migration_head_matches_alembic() -> None:
+    config = Config()
+    config.set_main_option("script_location", str(ROOT / "apps/api/migrations"))
+    heads = ScriptDirectory.from_config(config).get_heads()
+    assert heads == [launch_evidence.MIGRATION_HEAD]
 
 
 def production_record() -> dict:
@@ -29,10 +38,23 @@ def production_record() -> dict:
         "image_digests": {
             component: f"sha256:{index:064x}"
             for index, component in enumerate(
-                ("web", "api", "media_worker", "scene_worker", "backup"), start=1
+                (
+                    "web",
+                    "api",
+                    "media_worker",
+                    "backup",
+                    "caddy",
+                    "storage",
+                    "node_exporter",
+                    "blackbox",
+                ),
+                start=1,
             )
         },
     }
+    record["release"]["image_digests"]["scene_worker"] = record["release"][
+        "image_digests"
+    ]["api"]
     for gate_name, required in launch_evidence.REQUIRED_GATES.items():
         record["gates"][gate_name] = {
             "status": "pass",
@@ -59,6 +81,33 @@ def test_complete_production_evidence_still_requires_human_approval() -> None:
     assert result["status"] == "evidence_complete"
     assert result["remaining_gates"] == []
     assert result["human_approval_required"] is True
+
+
+def test_scene_worker_may_bind_to_the_ffmpeg_free_api_digest() -> None:
+    record = production_record()
+    record["release"]["image_digests"]["scene_worker"] = record["release"]["image_digests"]["api"]
+
+    result = launch_evidence.validate(record, dummy=False)
+
+    assert result["status"] == "evidence_complete"
+
+
+def test_scene_worker_must_bind_to_the_api_digest() -> None:
+    record = production_record()
+    record["release"]["image_digests"]["scene_worker"] = "sha256:" + "f" * 64
+
+    with pytest.raises(launch_evidence.EvidenceError, match="Scene worker"):
+        launch_evidence.validate(record, dummy=False)
+
+
+def test_eight_built_artifact_digests_must_be_distinct() -> None:
+    record = production_record()
+    record["release"]["image_digests"]["storage"] = record["release"][
+        "image_digests"
+    ]["caddy"]
+
+    with pytest.raises(launch_evidence.EvidenceError, match="artifact image digests"):
+        launch_evidence.validate(record, dummy=False)
 
 
 def test_pass_gate_fails_when_required_evidence_is_missing() -> None:

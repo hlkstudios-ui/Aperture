@@ -3,15 +3,14 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Journey } from "@/app/lib/curation";
-
-const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8000";
+import { apiGatewayPath } from "@/app/lib/api-gateway";
 
 export function JourneyProgress({ initial }: { initial: Journey }) {
   const [journey, setJourney] = useState(initial);
   const [authenticated, setAuthenticated] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
   useEffect(() => {
-    fetch(`${apiOrigin}/curation/journeys/${encodeURIComponent(initial.slug)}/progress`, { credentials: "include" })
+    fetch(apiGatewayPath(`/curation/journeys/${encodeURIComponent(initial.slug)}/progress`), { credentials: "include" })
       .then((response) => { if (!response.ok) throw new Error("private progress unavailable"); return response.json() as Promise<Journey>; })
       .then((value) => { setJourney(value); setAuthenticated(true); })
       .catch(() => undefined);
@@ -19,7 +18,7 @@ export function JourneyProgress({ initial }: { initial: Journey }) {
   const toggle = async (itemId: string, completed: boolean) => {
     setSaving(itemId);
     try {
-      const response = await fetch(`${apiOrigin}/curation/journeys/${encodeURIComponent(journey.slug)}/progress`, {
+      const response = await fetch(apiGatewayPath(`/curation/journeys/${encodeURIComponent(journey.slug)}/progress`), {
         method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ journey_item_id: itemId, completed }),
       });

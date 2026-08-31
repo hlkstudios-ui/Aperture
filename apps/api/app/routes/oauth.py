@@ -4,22 +4,33 @@ import hmac
 import json
 import secrets
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlencode
 
 import httpx
 from authlib.jose import JsonWebKey, jwt
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.auth import DbSession, new_session_token
+from app.auth import DbSession, new_session_token, token_hash
 from app.config import get_settings
 from app.models import DeviceSession, OAuthIdentity, Profile, ProfilePreference, User
+from app.oauth_broker import (
+    OAuthAttempt,
+    OAuthBrokerUnavailable,
+    OAuthHandoff,
+    consume_attempt,
+    consume_handoff_for_origin,
+    store_attempt,
+    store_handoff,
+)
 from app.rate_limit import enforce_rate_limit
 from app.remembered_accounts import remember_account
+from app.site_domain_service import resolve_request_public_origin, validate_public_origin
 
 router = APIRouter(prefix="/auth/oauth", tags=["customer OAuth"])
 settings = get_settings()
@@ -86,11 +97,12 @@ def _b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode().rstrip("=")
 
 
-def _signed_state(provider: str) -> str:
+def _signed_state(provider: str, return_origin: str) -> str:
     payload = _b64(
         json.dumps(
             {
                 "provider": provider,
+                "return_origin": return_origin,
                 "exp": int(time.time()) + 600,
                 "nonce": secrets.token_urlsafe(18),
             },
@@ -103,7 +115,7 @@ def _signed_state(provider: str) -> str:
     return f"{payload}.{signature}"
 
 
-def _validate_state(value: str, provider: str) -> None:
+def _validate_state(value: str, provider: str) -> dict[str, str | int]:
     try:
         payload, signature = value.split(".", 1)
         expected = _b64(
@@ -112,8 +124,13 @@ def _validate_state(value: str, provider: str) -> None:
         if not hmac.compare_digest(signature, expected):
             raise ValueError
         parsed = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
-        if parsed["provider"] != provider or parsed["exp"] < time.time():
+        if (
+            parsed["provider"] != provider
+            or parsed["exp"] < time.time()
+            or not isinstance(parsed.get("return_origin"), str)
+        ):
             raise ValueError
+        return parsed
     except (ValueError, KeyError, json.JSONDecodeError) as error:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Invalid or expired sign-in request"
@@ -121,7 +138,10 @@ def _validate_state(value: str, provider: str) -> None:
 
 
 def _callback_url(provider: str) -> str:
-    return f"{str(settings.api_origin).rstrip('/')}/auth/oauth/{provider}/callback"
+    return (
+        f"{str(settings.web_origin).rstrip('/')}/api/gateway/auth/oauth/"
+        f"{provider}/callback"
+    )
 
 
 @router.get("/providers")
@@ -139,7 +159,7 @@ def available_providers() -> dict:
 
 
 @router.get("/{provider}/start")
-async def start(provider: str, request: Request) -> RedirectResponse:
+async def start(provider: str, request: Request, db: DbSession) -> RedirectResponse:
     available = providers()
     config = available.get(provider)
     if config is None:
@@ -150,9 +170,24 @@ async def start(provider: str, request: Request) -> RedirectResponse:
         )
     client_ip = request.client.host if request.client else "unknown"
     await enforce_rate_limit(f"oauth-start:{client_ip}", limit=30, window_seconds=900)
-    state = _signed_state(provider)
+    return_origin = resolve_request_public_origin(db, request)
+    state = _signed_state(provider, return_origin)
     verifier = secrets.token_urlsafe(64)
     challenge = _b64(hashlib.sha256(verifier.encode()).digest())
+    try:
+        await store_attempt(
+            state,
+            OAuthAttempt(
+                provider=provider,
+                verifier=verifier,
+                return_origin=return_origin,
+            ),
+        )
+    except OAuthBrokerUnavailable as error:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Social sign-in is temporarily unavailable",
+        ) from error
     query = {
         "client_id": config.client_id,
         "redirect_uri": _callback_url(provider),
@@ -166,15 +201,60 @@ async def start(provider: str, request: Request) -> RedirectResponse:
         query["prompt"] = "select_account"
     if provider == "apple":
         query["response_mode"] = "form_post"
-    response = RedirectResponse(f"{config.authorize_url}?{urlencode(query)}", status_code=302)
+    return RedirectResponse(f"{config.authorize_url}?{urlencode(query)}", status_code=302)
+
+
+@router.get("/handoff")
+async def handoff(
+    request: Request,
+    db: DbSession,
+    code: str = Query(min_length=32, max_length=256),
+) -> RedirectResponse:
+    """Redeem a one-time broker code on the verified storefront hostname."""
+    public_origin = resolve_request_public_origin(db, request)
+    try:
+        payload = await consume_handoff_for_origin(code, public_origin)
+    except OAuthBrokerUnavailable as error:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Social sign-in is temporarily unavailable",
+        ) from error
+    if payload is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Sign-in handoff is invalid or expired")
+    try:
+        session_id = uuid.UUID(payload.session_id)
+    except ValueError as error:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Sign-in handoff is invalid or expired"
+        ) from error
+    session = db.scalar(
+        select(DeviceSession).where(
+            DeviceSession.id == session_id,
+            DeviceSession.token_hash == token_hash(payload.session_token),
+            DeviceSession.revoked_at.is_(None),
+            DeviceSession.expires_at > datetime.now(UTC),
+        )
+    )
+    if session is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Sign-in handoff is invalid or expired")
+
+    response = RedirectResponse(f"{public_origin}/profiles", status_code=303)
     response.set_cookie(
-        f"aperture_oauth_{provider}",
-        verifier,
-        max_age=600,
+        settings.customer_session_cookie,
+        payload.session_token,
+        max_age=settings.customer_session_days * 86400,
         httponly=True,
         secure=settings.app_env not in {"development", "test"},
         samesite="lax",
-        path=f"/auth/oauth/{provider}",
+        path="/",
+        domain=settings.session_cookie_domain,
+    )
+    remember_account(
+        request,
+        response,
+        payload.email,
+        provider=payload.provider,
+        label=payload.label,
     )
     return response
 
@@ -269,22 +349,43 @@ async def _identity(
     return email.lower(), subject, str(name)[:50]
 
 
-@router.api_route("/{provider}/callback", methods=["GET", "POST"])
 async def callback(provider: str, request: Request, db: DbSession) -> Response:
     config = providers().get(provider)
     if config is None or not _configured(config):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Identity provider is unavailable")
     params = await _callback_params(request)
+    state, code = params.get("state", ""), params.get("code", "")
+    state_payload = _validate_state(state, provider)
+    try:
+        attempt = await consume_attempt(state)
+    except OAuthBrokerUnavailable as error:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Social sign-in is temporarily unavailable",
+        ) from error
+    if (
+        attempt is None
+        or attempt.provider != provider
+        or not hmac.compare_digest(
+            attempt.return_origin, str(state_payload["return_origin"])
+        )
+    ):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or expired sign-in request")
+    try:
+        return_origin = validate_public_origin(db, attempt.return_origin)
+    except (TypeError, ValueError) as error:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "The sign-in storefront is no longer available"
+        ) from error
     if params.get("error"):
         return RedirectResponse(
-            f"{str(settings.web_origin).rstrip('/')}/login?oauth_error=cancelled", status_code=303
+            f"{return_origin}/login?oauth_error=cancelled", status_code=303
         )
-    state, code = params.get("state", ""), params.get("code", "")
-    _validate_state(state, provider)
-    verifier = request.cookies.get(f"aperture_oauth_{provider}")
-    if not code or not verifier:
+    if not code:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Incomplete sign-in response")
-    email, subject, display_name = await _identity(config, provider, code, verifier)
+    email, subject, display_name = await _identity(
+        config, provider, code, attempt.verifier
+    )
     identity = db.scalar(
         select(OAuthIdentity)
         .options(
@@ -316,28 +417,51 @@ async def callback(provider: str, request: Request, db: DbSession) -> Response:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This account is disabled")
     raw_token, hashed_token = new_session_token()
     active_profile_id = user.profiles[0].id if user.profiles else None
-    db.add(
-        DeviceSession(
-            user=user,
-            active_profile_id=active_profile_id,
-            token_hash=hashed_token,
-            user_agent=request.headers.get("user-agent"),
-            ip_address=request.client.host if request.client else None,
-            expires_at=datetime.now(UTC) + timedelta(days=settings.customer_session_days),
-        )
+    session = DeviceSession(
+        user=user,
+        active_profile_id=active_profile_id,
+        token_hash=hashed_token,
+        user_agent=request.headers.get("user-agent"),
+        ip_address=request.client.host if request.client else None,
+        expires_at=datetime.now(UTC) + timedelta(days=settings.customer_session_days),
     )
+    db.add(session)
     db.commit()
-    response = RedirectResponse(f"{str(settings.web_origin).rstrip('/')}/profiles", status_code=303)
-    response.set_cookie(
-        settings.customer_session_cookie,
-        raw_token,
-        max_age=settings.customer_session_days * 86400,
-        httponly=True,
-        secure=settings.app_env not in {"development", "test"},
-        samesite="lax",
-        path="/",
-        domain=settings.session_cookie_domain,
+    handoff_code = secrets.token_urlsafe(48)
+    try:
+        await store_handoff(
+            handoff_code,
+            OAuthHandoff(
+                session_id=str(session.id),
+                session_token=raw_token,
+                return_origin=return_origin,
+                email=email,
+                provider=provider,
+                label=display_name,
+            ),
+        )
+    except OAuthBrokerUnavailable as error:
+        session.revoked_at = datetime.now(UTC)
+        db.commit()
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Social sign-in is temporarily unavailable",
+        ) from error
+    query = urlencode({"code": handoff_code})
+    return RedirectResponse(
+        f"{return_origin}/api/gateway/auth/oauth/handoff?{query}", status_code=303
     )
-    remember_account(request, response, email, provider=provider, label=display_name)
-    response.delete_cookie(f"aperture_oauth_{provider}", path=f"/auth/oauth/{provider}")
-    return response
+
+
+router.add_api_route(
+    "/{provider}/callback",
+    callback,
+    methods=["GET"],
+    operation_id="oauth_callback_get",
+)
+router.add_api_route(
+    "/{provider}/callback",
+    callback,
+    methods=["POST"],
+    operation_id="oauth_callback_post",
+)
