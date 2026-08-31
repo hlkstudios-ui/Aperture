@@ -56,6 +56,11 @@ def test_production_rejects_placeholder_credentials_and_insecure_origins() -> No
         Settings(
             _env_file=None,
             app_env="production",
+            database_url=(
+                "postgresql+psycopg://service:replace_password@db.example.com/aperture"
+            ),
+            s3_access_key="replace_access_key",
+            s3_secret_key="replace_secret_key",
             session_secret="a" * 64,
             smtp_host="smtp.example.com",
             smtp_username="aperture",

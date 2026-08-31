@@ -9,6 +9,7 @@ MODULE_PATH = (
     / "digitalocean"
     / "digitalocean_rollback.py"
 )
+INPUT_PATH = MODULE_PATH.with_name("rollback.example.env")
 SPEC = importlib.util.spec_from_file_location("digitalocean_rollback", MODULE_PATH)
 assert SPEC and SPEC.loader
 rollback = importlib.util.module_from_spec(SPEC)
@@ -22,6 +23,7 @@ def configure(monkeypatch) -> None:
     monkeypatch.setenv("DIGITALOCEAN_APP_ID", APP_ID)
     monkeypatch.setenv("DIGITALOCEAN_ROLLBACK_DEPLOYMENT_ID", TARGET_ID)
     monkeypatch.setenv("DIGITALOCEAN_TOKEN", "private-operator-token")
+    monkeypatch.setenv("ROLLBACK_CONFIRMATION", "")
 
 
 def test_dummy_mode_never_calls_provider(monkeypatch) -> None:
@@ -45,7 +47,7 @@ def test_inspection_requires_exact_active_target(monkeypatch) -> None:
             }
         },
     )
-    result = rollback.run("inspect")
+    result = rollback.run("inspect", INPUT_PATH)
     assert result["event"] == "rollback.target_inspected"
     assert result["deployment_id"] == TARGET_ID
 
@@ -53,7 +55,7 @@ def test_inspection_requires_exact_active_target(monkeypatch) -> None:
 def test_execute_requires_confirmation_and_posts_exact_target(monkeypatch) -> None:
     configure(monkeypatch)
     try:
-        rollback.run("execute")
+        rollback.run("execute", INPUT_PATH)
     except RuntimeError as error:
         assert "confirmation" in str(error).lower()
     else:
@@ -69,7 +71,7 @@ def test_execute_requires_confirmation_and_posts_exact_target(monkeypatch) -> No
         return {"deployment": {"id": "33333333-3333-4333-8333-333333333333"}}
 
     monkeypatch.setattr(rollback, "api_request", fake_request)
-    result = rollback.run("execute")
+    result = rollback.run("execute", INPUT_PATH)
     assert result["event"] == "rollback.initiated"
     assert calls[-1] == (
         f"{APP_ID}/rollback",

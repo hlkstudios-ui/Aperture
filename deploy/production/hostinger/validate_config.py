@@ -3,6 +3,7 @@
 import argparse
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = ROOT.parents[2]
@@ -124,6 +125,24 @@ def memory_gib(value: str) -> float:
     if amount <= 0 or suffix not in {"m", "g"}:
         raise ValueError("memory limits must use positive m/g units")
     return amount if suffix == "g" else amount / 1024
+
+
+def require_https_origin(value: str, label: str) -> None:
+    try:
+        parsed = urlsplit(value)
+        parsed.port
+    except ValueError as error:
+        raise ValueError(f"{label} must be an HTTPS origin") from error
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(f"{label} must be an HTTPS origin")
 
 
 def load(path: Path) -> dict[str, str]:
@@ -375,6 +394,8 @@ def validate(
     )
     if len(set(hosts)) != 4 or any("." not in host for host in hosts):
         raise ValueError("public hostnames must be distinct DNS names")
+    for label in ("BACKUP_S3_ENDPOINT", "REPLICA_S3_ENDPOINT"):
+        require_https_origin(values[label], label)
     if deploy:
         required_for_deploy = labels - OPTIONAL_LABELS
         required_for_deploy.update(active_conditional_labels(values))

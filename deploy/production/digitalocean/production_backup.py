@@ -141,13 +141,12 @@ def run_backup() -> dict[str, object]:
             str(dump_path),
             config["BACKUP_S3_BUCKET"],
             manifest["dump_key"],
-            ExtraArgs={"ACL": "private", "ContentType": "application/octet-stream"},
+            ExtraArgs={"ContentType": "application/octet-stream"},
         )
         client.put_object(
             Bucket=config["BACKUP_S3_BUCKET"],
             Key=f"{prefix}.manifest.json",
             Body=json.dumps(manifest, sort_keys=True).encode(),
-            ACL="private",
             ContentType="application/json",
         )
     return {"status": "pass", "manifest_key": f"{prefix}.manifest.json"}

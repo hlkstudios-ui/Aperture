@@ -293,6 +293,7 @@ class TestResourceSandbox:
                 "S3_ENDPOINT": str(self.source.s3_endpoint),
                 "S3_PUBLIC_ENDPOINT": str(self.source.s3_endpoint),
                 "S3_BUCKET": self.plan.s3_bucket,
+                "BILLING_PROVIDER": "disabled",
                 "STUDIO_DEV_AUTO_LOGIN": "false",
                 "APERTURE_PYTEST_RESOURCE_TOKEN": self.plan.run_token,
             }
@@ -316,6 +317,7 @@ class TestResourceSandbox:
             "DATABASE_URL": (settings.database_url, self.plan.database_url),
             "REDIS_URL": (settings.redis_url, self.plan.redis_url),
             "S3_BUCKET": (settings.s3_bucket, self.plan.s3_bucket),
+            "BILLING_PROVIDER": (settings.billing_provider, "disabled"),
             "STUDIO_DEV_AUTO_LOGIN": (settings.studio_dev_auto_login, False),
         }
         mismatched = [name for name, values in expected.items() if values[0] != values[1]]

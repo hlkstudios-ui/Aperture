@@ -198,17 +198,48 @@ class HostingerReplicationTests(unittest.TestCase):
             replication.validate(replication.load(ROOT / "credentials.example.env"))
 
     def test_replica_must_be_remote_https_and_separate_bucket(self):
-        values = {
+        valid = {
             "S3_BUCKET": "production-media",
             "REPLICA_S3_ENDPOINT": "https://objects.example.com",
             "REPLICA_S3_BUCKET": "production-media-replica",
             "REPLICA_S3_ACCESS_KEY": "replica-key",
             "REPLICA_S3_SECRET_KEY": "replica-secret",
         }
-        replication.validate(values)
-        values["REPLICA_S3_ENDPOINT"] = "http://minio:9000"
-        with self.assertRaisesRegex(ValueError, "HTTPS origin"):
+        replication.validate(valid)
+        for endpoint in (
+            "http://minio:9000",
+            "https://objects.example.com/bucket",
+            "https://objects.example.com?bucket=value",
+            "https://access:secret@objects.example.com",
+            "https://objects.example.com:not-a-port",
+        ):
+            with self.subTest(endpoint=endpoint):
+                values = {**valid, "REPLICA_S3_ENDPOINT": endpoint}
+                with self.assertRaisesRegex(ValueError, "HTTPS origin"):
+                    replication.validate(values)
+
+        values = {**valid, "REPLICA_S3_ENDPOINT": "https://minio"}
+        with self.assertRaisesRegex(ValueError, "outside the Hostinger VPS"):
             replication.validate(values)
+
+    def test_replica_job_only_copies_objects_to_preprovisioned_bucket(self):
+        compose = (ROOT / "compose.yml").read_text()
+        service = compose.split("  replicate-media:", 1)[1].split(
+            "  node-exporter:", 1
+        )[0]
+
+        self.assertEqual(service.count("--api S3v4"), 2)
+        self.assertIn("mc mirror --overwrite", service)
+        for forbidden in (
+            "mc mb",
+            "mc version",
+            "mc anonymous",
+            "--preserve",
+            "--remove",
+            "ACL",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, service)
 
 
 class HostingerTopologyTests(unittest.TestCase):

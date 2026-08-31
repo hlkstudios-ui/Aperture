@@ -2,7 +2,7 @@
 
 import argparse
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
 
 
 def load(path: Path) -> dict[str, str]:
@@ -13,6 +13,25 @@ def load(path: Path) -> dict[str, str]:
             key, value = line.split("=", 1)
             values[key] = value
     return values
+
+
+def require_https_origin(value: str, label: str) -> SplitResult:
+    try:
+        endpoint = urlsplit(value)
+        endpoint.port
+    except ValueError as error:
+        raise ValueError(f"{label} must be an HTTPS origin") from error
+    if (
+        endpoint.scheme != "https"
+        or not endpoint.hostname
+        or endpoint.username is not None
+        or endpoint.password is not None
+        or endpoint.path not in {"", "/"}
+        or endpoint.query
+        or endpoint.fragment
+    ):
+        raise ValueError(f"{label} must be an HTTPS origin")
+    return endpoint
 
 
 def validate(values: dict[str, str]) -> None:
@@ -26,9 +45,9 @@ def validate(values: dict[str, str]) -> None:
     dummy = sorted(key for key in required if "DUMMY" in values[key].upper())
     if dummy:
         raise ValueError("replace dummy labels before replication: " + ", ".join(dummy))
-    endpoint = urlsplit(values["REPLICA_S3_ENDPOINT"])
-    if endpoint.scheme != "https" or not endpoint.hostname or endpoint.path not in {"", "/"}:
-        raise ValueError("REPLICA_S3_ENDPOINT must be an HTTPS origin")
+    endpoint = require_https_origin(
+        values["REPLICA_S3_ENDPOINT"], "REPLICA_S3_ENDPOINT"
+    )
     if endpoint.hostname in {"localhost", "127.0.0.1", "minio"}:
         raise ValueError("media replica must be outside the Hostinger VPS")
     if values["REPLICA_S3_BUCKET"] == values["S3_BUCKET"]:

@@ -89,6 +89,29 @@ class HostingerConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "distinct"):
             validate(values, deploy=False)
 
+    def test_backup_and_replica_endpoints_must_be_https_origins(self):
+        invalid_endpoints = (
+            "http://s3.example.com",
+            "https:///missing-host",
+            "https://s3.example.com/bucket",
+            "https://s3.example.com?bucket=value",
+            "https://s3.example.com#fragment",
+            "https://access:secret@s3.example.com",
+            "https://s3.example.com:not-a-port",
+        )
+        for label in ("BACKUP_S3_ENDPOINT", "REPLICA_S3_ENDPOINT"):
+            for endpoint in invalid_endpoints:
+                with self.subTest(label=label, endpoint=endpoint):
+                    values = load(EXAMPLE_INPUT)
+                    values[label] = endpoint
+                    with self.assertRaisesRegex(ValueError, f"{label}.*HTTPS origin"):
+                        validate(values, deploy=False)
+
+        values = load(EXAMPLE_INPUT)
+        values["BACKUP_S3_ENDPOINT"] = "https://s3.us-east-2.amazonaws.com"
+        values["REPLICA_S3_ENDPOINT"] = "https://s3.us-east-2.amazonaws.com/"
+        validate(values, deploy=False)
+
     def test_memory_profile_reserves_host_headroom(self):
         values = load(EXAMPLE_INPUT)
         values["MEDIA_WORKER_MEMORY_LIMIT"] = "16g"
