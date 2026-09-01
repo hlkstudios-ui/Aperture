@@ -67,6 +67,7 @@ describe("browser API-origin boundary", () => {
       "community",
       "curation",
       "playback",
+      "platform",
       "profiles",
       "recommendations",
       "scene-intelligence",

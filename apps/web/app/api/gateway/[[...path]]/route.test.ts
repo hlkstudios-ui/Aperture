@@ -15,6 +15,25 @@ afterEach(() => {
 });
 
 describe("same-origin API gateway", () => {
+  it("forwards only the allowlisted platform control-plane namespace", async () => {
+    vi.stubEnv("API_ORIGIN", API_ORIGIN);
+    const fetchMock = vi.fn(async (_target: URL | RequestInfo, _init?: RequestInit) => {
+      void _target;
+      void _init;
+      return Response.json({ schema_version: 1, items: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await GET(
+      new NextRequest("https://apertures.online/api/gateway/platform/templates"),
+      context(["platform", "templates"]),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(String(fetchMock.mock.calls[0][0])).toBe(`${API_ORIGIN}/platform/templates`);
+  });
+
   it("rejects non-allowlisted and traversal paths before an upstream request", async () => {
     vi.stubEnv("API_ORIGIN", API_ORIGIN);
     vi.stubEnv("CUSTOM_DOMAIN_EDGE_SECRET", "server-side-edge-secret");

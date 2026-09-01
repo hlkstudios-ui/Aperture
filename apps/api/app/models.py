@@ -1161,4 +1161,5 @@ from app import club_models as club_models  # noqa: E402, F401
 from app import community_models as community_models  # noqa: E402, F401
 from app import curation_models as curation_models  # noqa: E402, F401
 from app import explore_models as explore_models  # noqa: E402, F401
+from app import platform_models as platform_models  # noqa: E402, F401
 from app import scene_models as scene_models  # noqa: E402, F401

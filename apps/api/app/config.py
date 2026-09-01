@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     upload_url_ttl_seconds: int = 900
     customer_session_cookie: str = "aperture_session"
     admin_session_cookie: str = "aperture_admin_session"
+    platform_session_cookie: str = "aperture_platform_session"
+    platform_control_plane_enabled: bool = False
     session_cookie_domain: str | None = None
     admin_session_cookie_domain: str | None = None
     admin_web_origin: AnyHttpUrl | None = None
@@ -47,6 +49,8 @@ class Settings(BaseSettings):
     studio_dev_admin_email: EmailStr | None = None
     customer_session_days: int = 30
     admin_session_hours: int = 12
+    platform_session_days: int = 30
+    platform_tenant_base_domain: str = "apertures.online"
     registration_rate_limit_per_hour: int = 10
     session_secret: str = "replace_with_a_long_random_local_secret"
     oauth_google_client_id: str | None = None
@@ -340,6 +344,32 @@ class Settings(BaseSettings):
             raise ValueError("CDN_TOKEN_TTL_SECONDS must be between 60 and 900")
         if self.registration_rate_limit_per_hour < 1:
             raise ValueError("REGISTRATION_RATE_LIMIT_PER_HOUR must be positive")
+        cookie_names = {
+            self.customer_session_cookie,
+            self.admin_session_cookie,
+            self.platform_session_cookie,
+        }
+        if len(cookie_names) != 3 or any(
+            not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", name) for name in cookie_names
+        ):
+            raise ValueError("Customer, administrator, and platform cookies must be distinct")
+        if not 1 <= self.platform_session_days <= 90:
+            raise ValueError("PLATFORM_SESSION_DAYS must be between 1 and 90")
+        self.platform_tenant_base_domain = (
+            self.platform_tenant_base_domain.strip().lower().rstrip(".")
+        )
+        if not (
+            len(self.platform_tenant_base_domain) <= 189
+            and "." in self.platform_tenant_base_domain
+            and all(
+                re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+                for label in self.platform_tenant_base_domain.split(".")
+            )
+        ):
+            raise ValueError(
+                "PLATFORM_TENANT_BASE_DOMAIN must be a lower-case DNS hostname of at most "
+                "189 characters"
+            )
         if self.malware_scanner_mode not in {"disabled", "eicar", "clamav_tcp"}:
             raise ValueError("MALWARE_SCANNER_MODE must be disabled, eicar, or clamav_tcp")
         if self.app_env in {"staging", "production"} and self.malware_scanner_mode == "disabled":

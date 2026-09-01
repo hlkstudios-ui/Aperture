@@ -82,6 +82,17 @@ Phase 26 stores internationalization and caption behavior at the profile boundar
 
 Raw events retain user/profile foreign keys and therefore disappear with account/session deletion; aggregated rows contain only day, type, title dimensions, counts, and sums. Ingestion performs bounded expired-row cleanup using the configured retention window. The current synchronous recomputation provides immediate, deterministic development observability; production scale will move ingestion and reconciliation to partitioned queue consumers without changing the public event contract.
 
+## Platform and tenant boundary
+
+The commercial target adds a marketplace control plane above the current application while keeping
+each renter in an isolated Aperture cell built from the same canonical immutable release. Platform
+identity, template rentals, and future platform billing remain separate from cell viewers, Studio,
+data, and tenant commerce. The current repository is still one owner-controlled cell; it does not
+implement shared-database tenancy, cross-cell provisioning, or cross-cell hostname routing. See the
+[platform control-plane contract](PLATFORM_CONTROL_PLANE.md) for the authoritative foundation and
+delivery tranches, and [tenant monetization architecture](TENANT_MONETIZATION.md) for cell isolation
+and the separate tenant-commerce boundary.
+
 ## Target Topology
 
 The initial architecture follows the greenfield preference in Command B:

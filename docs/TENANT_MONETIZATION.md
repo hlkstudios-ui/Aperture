@@ -13,6 +13,10 @@ payment-provider connection, and public routing boundary. A control plane may au
 provisioning and lifecycle operations; it must not turn multiple businesses into aliases for one
 unpartitioned application database.
 
+The marketplace identity, template/version/agreement, rental-intent, and future trusted resolver
+boundaries are defined in the [platform control-plane contract](PLATFORM_CONTROL_PLANE.md). This
+document remains authoritative for cell isolation and the tenant-owned viewer-commerce flow.
+
 This model is intentionally different from adding a `tenant_id` field to only a few tables. The
 current application has single-installation assumptions across identity, Studio, catalog, media,
 billing, playback, analytics, storage, caches, and queues. A partial shared-data conversion would

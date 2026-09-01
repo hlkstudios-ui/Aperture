@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-08-31 — Platform control-plane contract
+
+- Defined the authoritative separation among the Aperture marketplace, isolated tenant cells, and
+  tenant-owned viewer commerce in [`PLATFORM_CONTROL_PLANE.md`](PLATFORM_CONTROL_PLANE.md).
+- Recorded the first slice as a version- and agreement-pinned `awaiting_payment` rental intent with
+  billing disabled, provisioning not started, and no domain route created; it does not claim an
+  active rental or deployed tenant.
+- Specified separate identity/cookie boundaries, immutable release binding, future cell registry and
+  trusted host resolution, no-custom-domain and verified custom-domain routing, idempotency/audit,
+  two-cell isolation gates, the final renter journey, and the remaining delivery tranches.
+- Defined `PLATFORM_CONTROL_PLANE_ENABLED=false` as the fail-closed tenant-cell default for the
+  transitional co-located routes; the final platform service and database remain separate work.
+
 ## 2026-08-31 — One-shot production restore boundary
 
 - Moved isolated-restore authorization and read-only backup credentials out of the owner and

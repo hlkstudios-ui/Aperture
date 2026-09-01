@@ -53,6 +53,8 @@ from app.routes import (
     oauth,
     operations,
     passport,
+    platform_auth,
+    platform_marketplace,
     playback,
     profiles,
     recommendations,
@@ -194,6 +196,23 @@ async def private_brand_assistant_cache_boundary(request, call_next):
     return response
 
 
+@app.middleware("http")
+async def platform_private_cache_boundary(request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/platform" or request.url.path.startswith("/platform/"):
+        response.headers["Cache-Control"] = "private, no-store, max-age=0, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        vary = {
+            token.strip()
+            for token in response.headers.get("Vary", "").split(",")
+            if token.strip()
+        }
+        vary.add("Cookie")
+        response.headers["Vary"] = ", ".join(sorted(vary, key=str.casefold))
+    return response
+
+
 def apply_security_headers(response) -> None:
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
@@ -247,6 +266,9 @@ app.include_router(site_brand.admin_router)
 app.include_router(legal_policy.router)
 app.include_router(site_domains.public_router)
 app.include_router(site_domains.router)
+if settings.platform_control_plane_enabled:
+    app.include_router(platform_auth.router)
+    app.include_router(platform_marketplace.router)
 app.include_router(viewer_monetization.router)
 app.include_router(viewer_plans.router)
 app.include_router(operations.router)

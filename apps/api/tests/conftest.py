@@ -295,6 +295,7 @@ class TestResourceSandbox:
                 "S3_BUCKET": self.plan.s3_bucket,
                 "BILLING_PROVIDER": "disabled",
                 "STUDIO_DEV_AUTO_LOGIN": "false",
+                "PLATFORM_CONTROL_PLANE_ENABLED": "true",
                 "APERTURE_PYTEST_RESOURCE_TOKEN": self.plan.run_token,
             }
         )
@@ -319,6 +320,10 @@ class TestResourceSandbox:
             "S3_BUCKET": (settings.s3_bucket, self.plan.s3_bucket),
             "BILLING_PROVIDER": (settings.billing_provider, "disabled"),
             "STUDIO_DEV_AUTO_LOGIN": (settings.studio_dev_auto_login, False),
+            "PLATFORM_CONTROL_PLANE_ENABLED": (
+                settings.platform_control_plane_enabled,
+                True,
+            ),
         }
         mismatched = [name for name, values in expected.items() if values[0] != values[1]]
         if mismatched or engine.url.database != self.plan.database_name:

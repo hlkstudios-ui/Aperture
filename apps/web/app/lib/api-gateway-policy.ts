@@ -8,6 +8,7 @@ export const browserApiPrefixes = [
   "community",
   "curation",
   "playback",
+  "platform",
   "profiles",
   "recommendations",
   "scene-intelligence",
