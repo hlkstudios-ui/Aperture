@@ -49,19 +49,33 @@ export type PlatformTemplateDetail = PlatformTemplate & {
 export type PlatformAccount = {
   id: string;
   email: string;
+  email_verified: boolean;
+  unverified_account_expires_at: string | null;
   created_at: string;
+};
+
+export type PlatformRegistration = PlatformAccount & {
+  verification_delivery: "development" | "sent" | "unavailable";
+  verification_token_expires_at: string | null;
+  development_verification_token: string | null;
+};
+
+export type PlatformVerificationDelivery = {
+  status: "already_verified" | "development" | "sent" | "unavailable";
+  verification_token_expires_at: string | null;
+  development_verification_token: string | null;
 };
 
 export type PlatformRental = {
   schema_version: 1;
   id: string;
-  status: "awaiting_payment";
+  status: "awaiting_payment" | "expired";
   tenant: {
     id: string;
     slug: string;
     business_name: string;
     hosted_hostname: string;
-    status: "reserved";
+    status: "reserved" | "released";
   };
   template: {
     id: string;
@@ -84,7 +98,11 @@ export type PlatformRental = {
   };
   provisioning_status: "not_started";
   domain_status: "not_created";
-  next_action: "platform_billing_unavailable";
+  next_action: "platform_billing_unavailable" | "start_new_rental_request";
+  reservation_active: boolean;
+  reservation_expires_at: string;
+  status_changed_at: string;
+  expired_at: string | null;
   created_at: string;
 };
 
@@ -100,6 +118,10 @@ function isRecord(value: unknown): value is UnknownRecord {
 
 function isString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
+}
+
+function isTimestamp(value: unknown): value is string {
+  return isString(value) && Number.isFinite(Date.parse(value));
 }
 
 function safePublicUrl(value: unknown): string | null {
@@ -246,10 +268,60 @@ export function parseTemplateDetail(value: unknown): PlatformTemplateDetail | nu
 }
 
 export function isPlatformAccount(value: unknown): value is PlatformAccount {
-  return isRecord(value)
-    && isString(value.id)
-    && isString(value.email)
-    && isString(value.created_at);
+  if (
+    !isRecord(value)
+    || !isString(value.id)
+    || !isString(value.email)
+    || typeof value.email_verified !== "boolean"
+    || !isTimestamp(value.created_at)
+  ) return false;
+  return value.email_verified
+    ? value.unverified_account_expires_at === null
+    : isTimestamp(value.unverified_account_expires_at);
+}
+
+export function isPlatformRegistration(value: unknown): value is PlatformRegistration {
+  if (!isPlatformAccount(value)) return false;
+  const registration = value as PlatformAccount & UnknownRecord;
+  return (
+    registration.verification_delivery === "development"
+    || registration.verification_delivery === "sent"
+    || registration.verification_delivery === "unavailable"
+  )
+    && registration.email_verified === false
+    && (
+      (registration.verification_delivery === "development"
+        && isTimestamp(registration.verification_token_expires_at)
+        && isString(registration.development_verification_token))
+      || (registration.verification_delivery === "sent"
+        && isTimestamp(registration.verification_token_expires_at)
+        && registration.development_verification_token === null)
+      || (registration.verification_delivery === "unavailable"
+        && (
+          registration.verification_token_expires_at === null
+          || isTimestamp(registration.verification_token_expires_at)
+        )
+        && registration.development_verification_token === null)
+    );
+}
+
+export function isPlatformVerificationDelivery(value: unknown): value is PlatformVerificationDelivery {
+  if (!isRecord(value)) return false;
+  if (value.status === "already_verified") {
+    return value.verification_token_expires_at === null
+      && value.development_verification_token === null;
+  }
+  if (value.status === "development") {
+    return isTimestamp(value.verification_token_expires_at)
+      && isString(value.development_verification_token);
+  }
+  if (value.status === "sent") {
+    return isTimestamp(value.verification_token_expires_at)
+      && value.development_verification_token === null;
+  }
+  return value.status === "unavailable"
+    && (value.verification_token_expires_at === null || isTimestamp(value.verification_token_expires_at))
+    && value.development_verification_token === null;
 }
 
 export function isPlatformRental(value: unknown): value is PlatformRental {
@@ -263,13 +335,21 @@ export function isPlatformRental(value: unknown): value is PlatformRental {
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   const slug = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
   const hostname = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
-  const timestamp = (candidate: unknown) => typeof candidate === "string"
-    && candidate.length > 0
-    && Number.isFinite(Date.parse(candidate));
+  const isActive = value.status === "awaiting_payment";
+  const lifecycleIsConsistent = isActive
+    ? value.tenant.status === "reserved"
+      && value.reservation_active === true
+      && value.next_action === "platform_billing_unavailable"
+      && value.expired_at === null
+    : value.status === "expired"
+      && value.tenant.status === "released"
+      && value.reservation_active === false
+      && value.next_action === "start_new_rental_request"
+      && isTimestamp(value.expired_at);
   return value.schema_version === 1
     && typeof value.id === "string"
     && uuid.test(value.id)
-    && value.status === "awaiting_payment"
+    && (value.status === "awaiting_payment" || value.status === "expired")
     && typeof value.tenant.id === "string"
     && uuid.test(value.tenant.id)
     && typeof value.tenant.slug === "string"
@@ -278,7 +358,7 @@ export function isPlatformRental(value: unknown): value is PlatformRental {
     && isString(value.tenant.hosted_hostname)
     && value.tenant.hosted_hostname === value.tenant.hosted_hostname.toLowerCase()
     && hostname.test(value.tenant.hosted_hostname)
-    && value.tenant.status === "reserved"
+    && (value.tenant.status === "reserved" || value.tenant.status === "released")
     && typeof value.template.id === "string"
     && uuid.test(value.template.id)
     && typeof value.template.slug === "string"
@@ -295,13 +375,15 @@ export function isPlatformRental(value: unknown): value is PlatformRental {
     && isString(value.legal_acceptance.version)
     && typeof value.legal_acceptance.content_sha256 === "string"
     && /^[0-9a-f]{64}$/.test(value.legal_acceptance.content_sha256)
-    && timestamp(value.legal_acceptance.accepted_at)
+    && isTimestamp(value.legal_acceptance.accepted_at)
     && value.platform_billing.status === "disabled"
     && value.platform_billing.checkout_available === false
     && value.provisioning_status === "not_started"
     && value.domain_status === "not_created"
-    && value.next_action === "platform_billing_unavailable"
-    && timestamp(value.created_at);
+    && lifecycleIsConsistent
+    && isTimestamp(value.reservation_expires_at)
+    && isTimestamp(value.status_changed_at)
+    && isTimestamp(value.created_at);
 }
 
 export function rentalMatchesIntent(

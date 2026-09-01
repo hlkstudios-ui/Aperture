@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -8,6 +9,18 @@ const agreementHash = "a".repeat(64);
 const templateId = "11111111-1111-4111-8111-111111111111";
 const versionId = "22222222-2222-4222-8222-222222222222";
 const agreementId = "33333333-3333-4333-8333-333333333333";
+const verifiedAccount = {
+  id: "account-1",
+  email: "owner@example.com",
+  email_verified: true,
+  unverified_account_expires_at: null,
+  created_at: "2026-08-31T12:00:00Z",
+};
+const unverifiedAccount = {
+  ...verifiedAccount,
+  email_verified: false,
+  unverified_account_expires_at: "2026-09-02T12:00:00Z",
+};
 
 function template(overrides: Partial<PlatformTemplate> = {}): PlatformTemplate {
   return {
@@ -75,11 +88,16 @@ const rental = {
   provisioning_status: "not_started",
   domain_status: "not_created",
   next_action: "platform_billing_unavailable",
+  reservation_active: true,
+  reservation_expires_at: "2026-09-01T12:30:00Z",
+  status_changed_at: "2026-08-31T12:30:00Z",
+  expired_at: null,
   created_at: "2026-08-31T12:30:00Z",
 };
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  window.history.replaceState(null, "", "/");
 });
 
 describe("Apertures marketplace catalog", () => {
@@ -144,7 +162,13 @@ describe("Apertures marketplace catalog", () => {
       if (url.endsWith("/platform/auth/me")) return Response.json({ detail: "Not authenticated" }, { status: 401 });
       if (url.endsWith("/platform/auth/config")) return Response.json({ captcha: { required: false, test_mode: false } });
       if (url.endsWith("/platform/auth/login")) {
-        return Response.json({ id: "account-1", email: "owner@example.com", created_at: "2026-08-31T12:00:00Z" });
+        return Response.json({
+          id: "account-1",
+          email: "owner@example.com",
+          email_verified: true,
+          unverified_account_expires_at: null,
+          created_at: "2026-08-31T12:00:00Z",
+        });
       }
       if (url.endsWith("/platform/rental-intents")) {
         rentalAttempts += 1;
@@ -213,6 +237,476 @@ describe("Apertures marketplace catalog", () => {
     });
   });
 
+  it("keeps an unverified login in an accessible verification step and supports resend and confirm", async () => {
+    let confirmationAttempts = 0;
+    const fetchMock = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/platform/templates/apertures")) return Response.json(detail);
+      if (url.endsWith("/platform/auth/me")) return Response.json({ detail: "Not authenticated" }, { status: 401 });
+      if (url.endsWith("/platform/auth/config")) return Response.json({ captcha: { required: false, test_mode: false } });
+      if (url.endsWith("/platform/auth/login")) return Response.json(unverifiedAccount);
+      if (url.endsWith("/platform/auth/email-verification/resend")) {
+        return Response.json({
+          status: "sent",
+          verification_token_expires_at: "2026-08-31T13:00:00Z",
+          development_verification_token: null,
+        });
+      }
+      if (url.endsWith("/platform/auth/email-verification/confirm")) {
+        confirmationAttempts += 1;
+        return confirmationAttempts === 1
+          ? Response.json({
+            detail: {
+              code: "platform_email_verification_invalid",
+              message: "Email verification token is invalid or expired.",
+            },
+          }, { status: 400 })
+          : Response.json(verifiedAccount);
+      }
+      throw new Error(`Unexpected fetch: ${url} (${_init?.method ?? "GET"})`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<MarketplaceCatalog initialState={{ status: "ready", templates: [template()] }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rent Apertures" }));
+    await screen.findByText(/complete, immutable rental terms/);
+    fireEvent.click(screen.getByRole("checkbox", { name: /read and accept this exact rental agreement/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue securely/ }));
+    await screen.findByRole("heading", { name: "Continue your rental request." });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Sign in and continue" })).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "owner@example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "correct horse battery staple" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in and continue" }));
+
+    expect(await screen.findByRole("heading", { name: "Verify your renter account." })).toBeInTheDocument();
+    const tokenField = screen.getByLabelText("Verification token");
+    expect(tokenField).toHaveValue("");
+    expect(screen.getByText(/This unverified account remains claimable until/)).toBeInTheDocument();
+    expect(screen.queryByText(/current verification link and token expire/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reserve rental request" })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/platform/rental-intents"))).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Request a new verification email" }));
+    expect(await screen.findByText("A new verification email has been sent.")).toBeInTheDocument();
+    expect(screen.getByText(/current verification link and token expire/)).toBeInTheDocument();
+    fireEvent.change(tokenField, { target: { value: "x".repeat(32) } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm email and continue" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Email verification token is invalid or expired.");
+    fireEvent.change(tokenField, { target: { value: "y".repeat(32) } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm email and continue" }));
+
+    expect(await screen.findByRole("heading", { name: "Name your front door." })).toBeInTheDocument();
+    const confirmCalls = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/platform/auth/email-verification/confirm"));
+    expect(confirmCalls).toHaveLength(2);
+    expect(JSON.parse(String(confirmCalls[1][1]?.body))).toEqual({ token: "y".repeat(32) });
+  });
+
+  it("routes an existing unverified session to verification without exposing rental submission", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/platform/templates/apertures")) return Response.json(detail);
+      if (url.endsWith("/platform/auth/me")) return Response.json(unverifiedAccount);
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<MarketplaceCatalog initialState={{ status: "ready", templates: [template()] }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rent Apertures" }));
+    await screen.findByText(/complete, immutable rental terms/);
+    fireEvent.click(screen.getByRole("checkbox", { name: /read and accept this exact rental agreement/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue securely/ }));
+
+    expect(await screen.findByRole("heading", { name: "Verify your renter account." })).toBeInTheDocument();
+    expect(screen.getByLabelText("Verification token")).toHaveValue("");
+    expect(screen.queryByRole("button", { name: "Reserve rental request" })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/platform/auth/config"))).toBe(false);
+  });
+
+  it("uses a registration development token only when the server explicitly returns one", async () => {
+    const developmentToken = "development-verification-token-123456789";
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/platform/templates/apertures")) return Response.json(detail);
+      if (url.endsWith("/platform/auth/me")) return Response.json({ detail: "Not authenticated" }, { status: 401 });
+      if (url.endsWith("/platform/auth/config")) return Response.json({ captcha: { required: false, test_mode: false } });
+      if (url.endsWith("/platform/auth/register")) {
+        return Response.json({
+          ...unverifiedAccount,
+          verification_delivery: "development",
+          verification_token_expires_at: "2026-08-31T13:00:00Z",
+          development_verification_token: developmentToken,
+        }, { status: 201 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }));
+    render(<MarketplaceCatalog initialState={{ status: "ready", templates: [template()] }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rent Apertures" }));
+    await screen.findByText(/complete, immutable rental terms/);
+    fireEvent.click(screen.getByRole("checkbox", { name: /read and accept this exact rental agreement/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue securely/ }));
+    await screen.findByRole("heading", { name: "Continue your rental request." });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create account and continue" })).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "owner@example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "Correct horse battery 1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create account and continue" }));
+
+    expect(await screen.findByRole("heading", { name: "Verify your renter account." })).toBeInTheDocument();
+    expect(screen.getByText(developmentToken)).toBeInTheDocument();
+    expect(screen.getByLabelText("Verification token")).toHaveValue(developmentToken);
+    expect(screen.getByText(/This unverified account remains claimable until/)).toBeInTheDocument();
+    expect(screen.getByText(/current verification link and token expire/)).toBeInTheDocument();
+  });
+
+  it("keeps the account claim deadline when initial verification delivery is unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/platform/templates/apertures")) return Response.json(detail);
+      if (url.endsWith("/platform/auth/me")) return Response.json({ detail: "Not authenticated" }, { status: 401 });
+      if (url.endsWith("/platform/auth/config")) return Response.json({ captcha: { required: false, test_mode: false } });
+      if (url.endsWith("/platform/auth/register")) {
+        return Response.json({
+          ...unverifiedAccount,
+          verification_delivery: "unavailable",
+          verification_token_expires_at: null,
+          development_verification_token: null,
+        }, { status: 201 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }));
+    render(<MarketplaceCatalog initialState={{ status: "ready", templates: [template()] }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rent Apertures" }));
+    await screen.findByText(/complete, immutable rental terms/);
+    fireEvent.click(screen.getByRole("checkbox", { name: /read and accept this exact rental agreement/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue securely/ }));
+    await screen.findByRole("heading", { name: "Continue your rental request." });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create account and continue" })).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "owner@example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "Correct horse battery 1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create account and continue" }));
+
+    expect(await screen.findByRole("heading", { name: "Verify your renter account." })).toBeInTheDocument();
+    expect(screen.getByText(/This unverified account remains claimable until/)).toBeInTheDocument();
+    expect(screen.getByText(/Email delivery is unavailable right now/)).toBeInTheDocument();
+    expect(screen.queryByText(/current verification link and token expire/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Verification token")).toHaveValue("");
+  });
+
+  it("confirms a verification fragment automatically and removes the token from the URL", async () => {
+    const token = "fragment-verification-token-123456789";
+    window.history.replaceState(null, "", `/marketplace#verify-email=${encodeURIComponent(token)}`);
+    const fetchMock = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
+      if (String(input).endsWith("/platform/auth/email-verification/confirm")) {
+        return Response.json(verifiedAccount);
+      }
+      throw new Error(`Unexpected fetch: ${String(input)} (${_init?.method ?? "GET"})`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <StrictMode>
+        <MarketplaceCatalog initialState={{ status: "ready", templates: [template()] }} />
+      </StrictMode>,
+    );
+
+    expect(await screen.findByText("Your platform account email is verified.")).toHaveAttribute("role", "status");
+    expect(window.location.hash).toBe("");
+    expect(window.location.pathname).toBe("/marketplace");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ token });
+  });
+
+  it("aborts automatic fragment confirmation when the catalog unmounts", async () => {
+    const token = "unmounted-fragment-confirmation-token-123456789";
+    let resolveConfirmation!: (response: Response) => void;
+    const pendingConfirmation = new Promise<Response>((resolve) => {
+      resolveConfirmation = resolve;
+    });
+    window.history.replaceState(null, "", `/marketplace#verify-email=${encodeURIComponent(token)}`);
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).endsWith("/platform/auth/email-verification/confirm")) {
+        return pendingConfirmation;
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${String(input)} (${init?.method ?? "GET"})`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const view = render(<MarketplaceCatalog initialState={{ status: "ready", templates: [template()] }} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const signal = fetchMock.mock.calls[0][1]?.signal as AbortSignal | undefined;
+    expect(signal?.aborted).toBe(false);
+    view.unmount();
+    expect(signal?.aborted).toBe(true);
+
+    await act(async () => {
+      resolveConfirmation(Response.json(verifiedAccount));
+      await pendingConfirmation;
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("claims an unauthenticated verification fragment with a strong new password and captcha", async () => {
+    const token = "unauthenticated-fragment-token-123456789";
+    const password = "Replacement Platform Password 123";
+    window.history.replaceState(null, "", `/marketplace#verify-email=${encodeURIComponent(token)}`);
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/platform/auth/email-verification/confirm")) {
+        return Response.json({ detail: "Platform authentication required" }, { status: 401 });
+      }
+      if (url.endsWith("/platform/auth/config")) {
+        return Response.json({ captcha: { required: true, test_mode: true } });
+      }
+      if (url.endsWith("/platform/auth/email-verification/claim")) {
+        return Response.json(verifiedAccount);
+      }
+      throw new Error(`Unexpected fetch: ${url} (${init?.method ?? "GET"})`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<MarketplaceCatalog initialState={{ status: "ready", templates: [template()] }} />);
+
+    expect(await screen.findByRole("heading", { name: "Set a password to finish verification." })).toBeInTheDocument();
+    expect(window.location.hash).toBe("");
+    expect(document.body).not.toHaveTextContent(token);
+    expect(screen.queryByLabelText("Verification token")).not.toBeInTheDocument();
+    const passwordField = screen.getByLabelText("New platform account password");
+    const claimButton = screen.getByRole("button", { name: "Verify email, set password, and sign in" });
+    expect(claimButton).toBeDisabled();
+    fireEvent.change(passwordField, { target: { value: password } });
+    await waitFor(() => expect(claimButton).toBeEnabled());
+    fireEvent.click(claimButton);
+
+    expect(await screen.findByText("Your platform account email is verified and this browser is signed in.")).toHaveAttribute("role", "status");
+    expect(screen.queryByRole("heading", { name: "Set a password to finish verification." })).not.toBeInTheDocument();
+    const claimCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/platform/auth/email-verification/claim"));
+    expect(claimCall).toBeDefined();
+    expect(JSON.parse(String(claimCall?.[1]?.body))).toEqual({
+      token,
+      password,
+      captcha_token: "local-captcha-pass",
+    });
+  });
+
+  it("offers secure claim when an authenticated browser is signed in to a different account", async () => {
+    const token = "different-account-fragment-token-123456789";
+    window.history.replaceState(null, "", `/marketplace#verify-email=${encodeURIComponent(token)}`);
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/platform/auth/email-verification/confirm")) {
+        return Response.json({
+          detail: {
+            code: "platform_email_verification_invalid",
+            message: "Email verification token is invalid or expired.",
+          },
+        }, { status: 400 });
+      }
+      if (url.endsWith("/platform/auth/config")) {
+        return Response.json({ captcha: { required: false, test_mode: false } });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<MarketplaceCatalog initialState={{ status: "ready", templates: [template()] }} />);
+
+    expect(await screen.findByRole("heading", { name: "Set a password to finish verification." })).toBeInTheDocument();
+    expect(screen.getByText(/belongs to a different platform account/)).toHaveAttribute("role", "status");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent(token);
+    expect(window.location.hash).toBe("");
+  });
+
+  it("keeps unrelated fragment-confirmation failures as errors", async () => {
+    const token = "unrelated-confirmation-error-token-123456789";
+    window.history.replaceState(null, "", `/marketplace#verify-email=${encodeURIComponent(token)}`);
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      if (String(input).endsWith("/platform/auth/email-verification/confirm")) {
+        return Response.json({
+          detail: { code: "platform_origin_invalid", message: "Request origin does not match host." },
+        }, { status: 400 });
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }));
+
+    render(<MarketplaceCatalog initialState={{ status: "ready", templates: [template()] }} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Request origin does not match host.");
+    expect(screen.queryByRole("heading", { name: "Set a password to finish verification." })).not.toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent(token);
+    expect(window.location.hash).toBe("");
+  });
+
+  it("keeps a fragment claim alive when a rental dialog opens concurrently", async () => {
+    const token = "claim-survives-rental-dialog-token-123456789";
+    const password = "Concurrent Claim Password 123";
+    let resolveClaim!: (response: Response) => void;
+    const pendingClaim = new Promise<Response>((resolve) => {
+      resolveClaim = resolve;
+    });
+    window.history.replaceState(null, "", `/marketplace#verify-email=${encodeURIComponent(token)}`);
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/platform/auth/email-verification/confirm")) {
+        return Response.json({ detail: "Platform authentication required" }, { status: 401 });
+      }
+      if (url.endsWith("/platform/auth/config")) {
+        return Response.json({ captcha: { required: false, test_mode: false } });
+      }
+      if (url.endsWith("/platform/auth/email-verification/claim")) return pendingClaim;
+      if (url.endsWith("/platform/templates/apertures")) return Response.json(detail);
+      throw new Error(`Unexpected fetch: ${url} (${init?.method ?? "GET"})`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<MarketplaceCatalog initialState={{ status: "ready", templates: [template()] }} />);
+
+    await screen.findByRole("heading", { name: "Set a password to finish verification." });
+    fireEvent.change(screen.getByLabelText("New platform account password"), { target: { value: password } });
+    const claimButton = screen.getByRole("button", { name: "Verify email, set password, and sign in" });
+    await waitFor(() => expect(claimButton).toBeEnabled());
+    fireEvent.click(claimButton);
+    expect(await screen.findByRole("button", { name: "Claiming account…" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rent Apertures" }));
+    await screen.findByText(/complete, immutable rental terms/);
+    const claimCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/platform/auth/email-verification/claim"));
+    expect((claimCall?.[1]?.signal as AbortSignal | undefined)?.aborted).toBe(false);
+
+    await act(async () => {
+      resolveClaim(Response.json(verifiedAccount));
+      await pendingClaim;
+    });
+    expect(await screen.findByText("Your platform account email is verified and this browser is signed in.")).toHaveAttribute("role", "status");
+    expect(screen.queryByRole("heading", { name: "Set a password to finish verification." })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Apertures" })).toBeInTheDocument();
+  });
+
+  it("atomically advances a matching verification step after a late fragment confirmation", async () => {
+    const token = "late-matching-fragment-confirmation-123456789";
+    let resolveConfirmation!: (response: Response) => void;
+    const pendingConfirmation = new Promise<Response>((resolve) => {
+      resolveConfirmation = resolve;
+    });
+    window.history.replaceState(null, "", `/marketplace#verify-email=${encodeURIComponent(token)}`);
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/platform/auth/email-verification/confirm")) return pendingConfirmation;
+      if (url.endsWith("/platform/templates/apertures")) return Response.json(detail);
+      if (url.endsWith("/platform/auth/me")) return Response.json(unverifiedAccount);
+      throw new Error(`Unexpected fetch: ${url}`);
+    }));
+    render(<MarketplaceCatalog initialState={{ status: "ready", templates: [template()] }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rent Apertures" }));
+    await screen.findByText(/complete, immutable rental terms/);
+    fireEvent.click(screen.getByRole("checkbox", { name: /read and accept this exact rental agreement/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue securely/ }));
+    expect(await screen.findByRole("heading", { name: "Verify your renter account." })).toBeInTheDocument();
+
+    await act(async () => {
+      resolveConfirmation(Response.json(verifiedAccount));
+      await pendingConfirmation;
+    });
+    expect(await screen.findByRole("heading", { name: "Name your front door." })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Verify your renter account." })).not.toBeInTheDocument();
+  });
+
+  it("does not let a late fragment confirmation overwrite a newer platform login", async () => {
+    const token = "late-stale-account-confirmation-token-123456789";
+    const newerAccount = {
+      ...verifiedAccount,
+      id: "account-2",
+      email: "newer@example.com",
+    };
+    let resolveConfirmation!: (response: Response) => void;
+    const pendingConfirmation = new Promise<Response>((resolve) => {
+      resolveConfirmation = resolve;
+    });
+    window.history.replaceState(null, "", `/marketplace#verify-email=${encodeURIComponent(token)}`);
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/platform/auth/email-verification/confirm")) return pendingConfirmation;
+      if (url.endsWith("/platform/templates/apertures")) return Response.json(detail);
+      if (url.endsWith("/platform/auth/me")) return Response.json({ detail: "Not authenticated" }, { status: 401 });
+      if (url.endsWith("/platform/auth/config")) return Response.json({ captcha: { required: false, test_mode: false } });
+      if (url.endsWith("/platform/auth/login")) return Response.json(newerAccount);
+      throw new Error(`Unexpected fetch: ${url}`);
+    }));
+    render(<MarketplaceCatalog initialState={{ status: "ready", templates: [template()] }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rent Apertures" }));
+    await screen.findByText(/complete, immutable rental terms/);
+    fireEvent.click(screen.getByRole("checkbox", { name: /read and accept this exact rental agreement/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue securely/ }));
+    await screen.findByRole("heading", { name: "Continue your rental request." });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Sign in and continue" })).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: newerAccount.email } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "correct horse battery staple" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in and continue" }));
+    expect(await screen.findByRole("heading", { name: "Name your front door." })).toBeInTheDocument();
+    expect(screen.getByText(newerAccount.email)).toBeInTheDocument();
+
+    await act(async () => {
+      resolveConfirmation(Response.json(verifiedAccount));
+      await pendingConfirmation;
+    });
+    expect(screen.getByRole("heading", { name: "Name your front door." })).toBeInTheDocument();
+    expect(screen.getByText(newerAccount.email)).toBeInTheDocument();
+    expect(screen.queryByText(verifiedAccount.email)).not.toBeInTheDocument();
+  });
+
+  it("does not claim success for an expired idempotency replay and rotates the next request key", async () => {
+    const expiredRental = {
+      ...rental,
+      status: "expired",
+      tenant: { ...rental.tenant, status: "released" },
+      next_action: "start_new_rental_request",
+      reservation_active: false,
+      status_changed_at: "2026-09-01T12:30:00Z",
+      expired_at: "2026-09-01T12:30:00Z",
+    };
+    let rentalAttempts = 0;
+    const fetchMock = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/platform/templates/apertures")) return Response.json(detail);
+      if (url.endsWith("/platform/auth/me")) return Response.json(verifiedAccount);
+      if (url.endsWith("/platform/rental-intents")) {
+        rentalAttempts += 1;
+        return rentalAttempts === 1
+          ? Response.json(expiredRental, { headers: { "Idempotency-Replayed": "true" } })
+          : Response.json(rental);
+      }
+      throw new Error(`Unexpected fetch: ${url} (${_init?.method ?? "GET"})`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<MarketplaceCatalog initialState={{ status: "ready", templates: [template()] }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rent Apertures" }));
+    await screen.findByText(/complete, immutable rental terms/);
+    fireEvent.click(screen.getByRole("checkbox", { name: /read and accept this exact rental agreement/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue securely/ }));
+    await screen.findByRole("heading", { name: "Name your front door." });
+    fireEvent.change(screen.getByLabelText("Business name"), { target: { value: "North Star Cinema" } });
+    fireEvent.change(screen.getByLabelText("Desired Apertures-hosted address"), { target: { value: "north-star-cinema" } });
+    fireEvent.click(screen.getByRole("button", { name: "Reserve rental request" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/rental reservation expired/i);
+    expect(screen.queryByRole("heading", { name: "Your rental request is reserved." })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Reserve rental request" }));
+    expect(await screen.findByRole("heading", { name: "Your rental request is reserved." })).toBeInTheDocument();
+
+    const rentalCalls = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/platform/rental-intents"));
+    const firstKey = new Headers(rentalCalls[0][1]?.headers).get("Idempotency-Key");
+    const secondKey = new Headers(rentalCalls[1][1]?.headers).get("Idempotency-Key");
+    expect(firstKey).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(secondKey).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(secondKey).not.toBe(firstKey);
+  });
+
   it("ignores an account response from a closed flow after another template opens", async () => {
     let resolveStaleAccount!: (response: Response) => void;
     const staleAccount = new Promise<Response>((resolve) => {
@@ -267,6 +761,8 @@ describe("Apertures marketplace catalog", () => {
       resolveStaleAccount(Response.json({
         id: "77777777-7777-4777-8777-777777777777",
         email: "stale@example.com",
+        email_verified: true,
+        unverified_account_expires_at: null,
         created_at: "2026-08-31T12:00:00Z",
       }));
       await staleAccount;

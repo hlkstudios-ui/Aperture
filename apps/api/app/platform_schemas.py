@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.schemas import RegisterRequest
 
@@ -51,7 +51,63 @@ class PlatformLoginRequest(StrictModel):
 class PlatformAccountResponse(StrictModel):
     id: uuid.UUID
     email: EmailStr
+    email_verified: bool
+    unverified_account_expires_at: datetime | None
     created_at: datetime
+
+
+class PlatformRegistrationResponse(PlatformAccountResponse):
+    verification_delivery: Literal["development", "sent", "unavailable"]
+    verification_token_expires_at: datetime | None
+    development_verification_token: str | None = None
+
+    @model_validator(mode="after")
+    def delivery_state_is_truthful(self) -> "PlatformRegistrationResponse":
+        if self.email_verified:
+            raise ValueError("A new registration must remain unverified")
+        if (
+            self.verification_delivery in {"development", "sent"}
+            and self.verification_token_expires_at is None
+        ):
+            raise ValueError("Successful verification delivery requires a token deadline")
+        if (self.verification_delivery == "development") != bool(
+            self.development_verification_token
+        ):
+            raise ValueError("Development verification tokens must stay development-only")
+        return self
+
+
+class PlatformEmailVerificationRequest(StrictModel):
+    token: str = Field(min_length=32, max_length=256)
+
+
+class PlatformEmailVerificationClaimRequest(PlatformEmailVerificationRequest):
+    password: str = Field(min_length=12, max_length=128)
+    captcha_token: str | None = Field(default=None, max_length=2048)
+
+    @field_validator("password")
+    @classmethod
+    def strong_password(cls, value: str) -> str:
+        return RegisterRequest.strong_password(value)
+
+
+class PlatformEmailVerificationDeliveryResponse(StrictModel):
+    status: Literal["already_verified", "development", "sent", "unavailable"]
+    verification_token_expires_at: datetime | None
+    development_verification_token: str | None = None
+
+    @model_validator(mode="after")
+    def delivery_state_is_truthful(self) -> "PlatformEmailVerificationDeliveryResponse":
+        if self.status == "already_verified" and (
+            self.verification_token_expires_at is not None
+            or self.development_verification_token is not None
+        ):
+            raise ValueError("A verified account cannot expose a verification token")
+        if self.status in {"development", "sent"} and self.verification_token_expires_at is None:
+            raise ValueError("Successful verification delivery requires a token deadline")
+        if (self.status == "development") != bool(self.development_verification_token):
+            raise ValueError("Development verification tokens must stay development-only")
+        return self
 
 
 class CaptchaConfiguration(StrictModel):
@@ -158,7 +214,7 @@ class RentalTenantResponse(StrictModel):
     slug: str
     business_name: str
     hosted_hostname: str
-    status: Literal["reserved"]
+    status: Literal["reserved", "released"]
 
 
 class RentalTemplateResponse(StrictModel):
@@ -185,7 +241,7 @@ class PlatformBillingResponse(StrictModel):
 class TemplateRentalResponse(StrictModel):
     schema_version: Literal[1] = 1
     id: uuid.UUID
-    status: Literal["awaiting_payment"]
+    status: Literal["awaiting_payment", "expired"]
     tenant: RentalTenantResponse
     template: RentalTemplateResponse
     price_snapshot: PlatformTemplatePricing
@@ -193,7 +249,13 @@ class TemplateRentalResponse(StrictModel):
     platform_billing: PlatformBillingResponse = Field(default_factory=PlatformBillingResponse)
     provisioning_status: Literal["not_started"] = "not_started"
     domain_status: Literal["not_created"] = "not_created"
-    next_action: Literal["platform_billing_unavailable"] = "platform_billing_unavailable"
+    next_action: Literal[
+        "platform_billing_unavailable", "start_new_rental_request"
+    ] = "platform_billing_unavailable"
+    reservation_active: bool
+    reservation_expires_at: datetime
+    status_changed_at: datetime
+    expired_at: datetime | None
     created_at: datetime
 
 

@@ -1,10 +1,11 @@
 import hashlib
 import json
+import math
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -54,6 +55,19 @@ RESERVED_TENANT_SLUGS = frozenset(
         "www",
     }
 )
+EXPECTED_RENTAL_CONFLICT_CONSTRAINTS = frozenset(
+    {
+        "uq_template_rentals_idempotency",
+        "uq_platform_tenants_active_slug",
+        "uq_platform_tenants_active_hostname",
+    }
+)
+
+
+def _constraint_name(error: IntegrityError) -> str | None:
+    diagnostics = getattr(error.orig, "diag", None)
+    value = getattr(diagnostics, "constraint_name", None)
+    return value if isinstance(value, str) else None
 
 
 def request_fingerprint(payload: RentalIntentCreate) -> str:
@@ -175,7 +189,10 @@ def template_response(
     return PlatformTemplateDetail(**values, rental_agreement=agreement_response)
 
 
-def rental_response(db: Session, rental: TemplateRental) -> TemplateRentalResponse:
+def rental_response(
+    db: Session,
+    rental: TemplateRental,
+) -> TemplateRentalResponse:
     tenant = db.get(TenantReservation, rental.tenant_id)
     template = db.get(PlatformTemplate, rental.template_id)
     version = db.get(PlatformTemplateVersion, rental.template_version_id)
@@ -188,6 +205,10 @@ def rental_response(db: Session, rental: TemplateRental) -> TemplateRentalRespon
     assert version is not None
     assert agreement is not None
     assert acceptance is not None
+    if rental.status == "expired" and tenant.status != "released":
+        raise RuntimeError("Expired platform rental has an active tenant reservation")
+    if rental.status == "awaiting_payment" and tenant.status != "reserved":
+        raise RuntimeError("Active platform rental has a released tenant reservation")
     return TemplateRentalResponse(
         id=rental.id,
         status=rental.status,
@@ -217,6 +238,15 @@ def rental_response(db: Session, rental: TemplateRental) -> TemplateRentalRespon
             content_sha256=acceptance.agreement_content_sha256,
             accepted_at=acceptance.accepted_at,
         ),
+        next_action=(
+            "start_new_rental_request"
+            if rental.status == "expired"
+            else "platform_billing_unavailable"
+        ),
+        reservation_active=rental.status == "awaiting_payment",
+        reservation_expires_at=rental.reservation_expires_at,
+        status_changed_at=rental.status_changed_at,
+        expired_at=rental.expired_at,
         created_at=rental.created_at,
     )
 
@@ -227,10 +257,151 @@ def _existing_rental(
     idempotency_key: uuid.UUID,
 ) -> TemplateRental | None:
     return db.scalar(
-        select(TemplateRental).where(
+        select(TemplateRental)
+        .where(
             TemplateRental.account_id == account_id,
             TemplateRental.idempotency_key == idempotency_key,
         )
+        .with_for_update()
+    )
+
+
+def _database_now(db: Session) -> datetime:
+    now = db.scalar(select(func.transaction_timestamp()))
+    if not isinstance(now, datetime):
+        raise RuntimeError("Database clock is unavailable")
+    return now
+
+
+def _expire_rental(
+    db: Session,
+    rental: TemplateRental,
+    *,
+    now: datetime,
+) -> bool:
+    if rental.status != "awaiting_payment" or rental.reservation_expires_at > now:
+        return False
+    tenant = db.scalar(
+        select(TenantReservation)
+        .where(TenantReservation.id == rental.tenant_id)
+        .with_for_update()
+    )
+    membership = db.scalar(
+        select(TenantMembership)
+        .where(
+            TenantMembership.id == rental.owner_membership_id,
+            TenantMembership.tenant_id == rental.tenant_id,
+            TenantMembership.account_id == rental.account_id,
+            TenantMembership.role == "owner",
+        )
+        .with_for_update()
+    )
+    if tenant is None or membership is None:
+        raise RuntimeError("Rental expiry references are incomplete")
+    if tenant.status != "reserved" or membership.status != "active":
+        raise RuntimeError("Rental expiry lifecycle is inconsistent")
+    rental.status = "expired"
+    rental.status_changed_at = now
+    rental.expired_at = now
+    tenant.status = "released"
+    tenant.released_at = now
+    tenant.release_reason = "expired"
+    membership.status = "released"
+    db.add(
+        PlatformAuditEvent(
+            actor_type="system",
+            actor_account_id=None,
+            action="template_rental.intent_expired",
+            outcome="succeeded",
+            resource_type="template_rental",
+            resource_id=rental.id,
+            idempotency_key=rental.idempotency_key,
+            detail={
+                "schema_version": 1,
+                "tenant_id": str(tenant.id),
+                "status": "expired",
+            },
+        )
+    )
+    return True
+
+
+def reconcile_expired_rental_intents(
+    db: Session,
+    *,
+    limit: int = 100,
+    account_id: uuid.UUID | None = None,
+    tenant_slug: str | None = None,
+    now: datetime | None = None,
+    skip_locked: bool = True,
+) -> int:
+    if not 1 <= limit <= 500:
+        raise ValueError("Expiry reconciliation limit must be between 1 and 500")
+    observed_at = now or _database_now(db)
+    statement = (
+        select(TemplateRental)
+        .join(TenantReservation, TenantReservation.id == TemplateRental.tenant_id)
+        .where(
+            TemplateRental.status == "awaiting_payment",
+            TemplateRental.reservation_expires_at <= observed_at,
+        )
+    )
+    filters = []
+    if account_id is not None:
+        filters.append(TemplateRental.account_id == account_id)
+    if tenant_slug is not None:
+        filters.append(TenantReservation.slug == tenant_slug)
+    if filters:
+        statement = statement.where(or_(*filters))
+    rentals = list(
+        db.scalars(
+            statement.order_by(
+                TemplateRental.reservation_expires_at,
+                TemplateRental.id,
+            )
+            .limit(limit)
+            .with_for_update(of=TemplateRental, skip_locked=skip_locked)
+        )
+    )
+    return sum(_expire_rental(db, rental, now=observed_at) for rental in rentals)
+
+
+def _quota_error(db: Session, account: PlatformAccount, now: datetime) -> HTTPException:
+    active_count = (
+        db.scalar(
+            select(func.count())
+            .select_from(TemplateRental)
+            .where(
+                TemplateRental.account_id == account.id,
+                TemplateRental.status == "awaiting_payment",
+                TemplateRental.reservation_expires_at > now,
+            )
+        )
+        or 0
+    )
+    if active_count < account.active_unpaid_reservation_limit:
+        raise RuntimeError("Quota error was requested while capacity remained")
+    earliest = db.scalar(
+        select(func.min(TemplateRental.reservation_expires_at)).where(
+            TemplateRental.account_id == account.id,
+            TemplateRental.status == "awaiting_payment",
+            TemplateRental.reservation_expires_at > now,
+        )
+    )
+    retry_after = (
+        max(1, math.ceil((earliest - now).total_seconds()))
+        if isinstance(earliest, datetime)
+        else 3600
+    )
+    return HTTPException(
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        detail={
+            "code": "active_unpaid_reservation_quota_exceeded",
+            "message": "Complete or let the active rental request expire before starting another.",
+            "limit": account.active_unpaid_reservation_limit,
+            "active_count": active_count,
+        },
+        headers={"Retry-After": str(min(retry_after, 604800))},
     )
 
 
@@ -242,13 +413,33 @@ def create_rental_intent(
     payload: RentalIntentCreate,
 ) -> tuple[TemplateRentalResponse, bool]:
     fingerprint = request_fingerprint(payload)
-    existing = _existing_rental(db, account.id, idempotency_key)
+    locked_account = db.scalar(
+        select(PlatformAccount)
+        .where(PlatformAccount.id == account.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if locked_account is None or not locked_account.is_active:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Platform account is unavailable")
+    if locked_account.email_verified_at is None:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "platform_email_verification_required",
+                "message": "Verify the platform account email before reserving a template.",
+            },
+        )
+    account_id = locked_account.id
+    now = _database_now(db)
+    existing = _existing_rental(db, account_id, idempotency_key)
     if existing is not None:
         if existing.request_fingerprint != fingerprint:
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
                 "Idempotency key was already used with different rental details",
             )
+        if _expire_rental(db, existing, now=now):
+            db.commit()
         return rental_response(db, existing), True
 
     if payload.requested_tenant_slug in RESERVED_TENANT_SLUGS:
@@ -264,14 +455,38 @@ def create_rental_intent(
     # The template row serializes offers for this template. A concurrent request may have
     # committed while this transaction waited for the lock, so resolve the idempotency record
     # again before treating its now-reserved slug as a conflict.
-    existing = _existing_rental(db, account.id, idempotency_key)
+    reconcile_expired_rental_intents(
+        db,
+        account_id=account_id,
+        tenant_slug=payload.requested_tenant_slug,
+        now=now,
+        skip_locked=False,
+    )
+    db.flush()
+    existing = _existing_rental(db, account_id, idempotency_key)
     if existing is not None:
         if existing.request_fingerprint != fingerprint:
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
                 "Idempotency key was already used with different rental details",
             )
+        if _expire_rental(db, existing, now=now):
+            db.commit()
         return rental_response(db, existing), True
+    active_count = (
+        db.scalar(
+            select(func.count())
+            .select_from(TemplateRental)
+            .where(
+                TemplateRental.account_id == account_id,
+                TemplateRental.status == "awaiting_payment",
+                TemplateRental.reservation_expires_at > now,
+            )
+        )
+        or 0
+    )
+    if active_count >= locked_account.active_unpaid_reservation_limit:
+        raise _quota_error(db, locked_account, now)
     version, agreement, available = _publication(db, template)
     if not available or version is None or agreement is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Template is not available for rent")
@@ -290,14 +505,17 @@ def create_rental_intent(
             "Rental agreement changed; review and accept the current terms",
         )
     if db.scalar(
-        select(TenantReservation.id).where(TenantReservation.slug == payload.requested_tenant_slug)
+        select(TenantReservation.id).where(
+            TenantReservation.slug == payload.requested_tenant_slug,
+            TenantReservation.status == "reserved",
+        )
     ):
         raise HTTPException(status.HTTP_409_CONFLICT, "Requested tenant slug is unavailable")
 
-    now = datetime.now(UTC)
     tenant_id = uuid.uuid4()
     acceptance_id = uuid.uuid4()
     rental_id = uuid.uuid4()
+    membership_id = uuid.uuid4()
     hosted_hostname = (
         f"{payload.requested_tenant_slug}.{get_settings().platform_tenant_base_domain}"
     )
@@ -312,7 +530,7 @@ def create_rental_intent(
     )
     acceptance = LegalAcceptance(
         id=acceptance_id,
-        account_id=account.id,
+        account_id=account_id,
         agreement_version_id=agreement.id,
         agreement_content_sha256=agreement.content_sha256,
         accepted_at=now,
@@ -321,22 +539,29 @@ def create_rental_intent(
     )
     rental = TemplateRental(
         id=rental_id,
-        account_id=account.id,
+        account_id=account_id,
         tenant_id=tenant.id,
         template_id=template.id,
         template_version_id=version.id,
         agreement_version_id=agreement.id,
         legal_acceptance_id=acceptance.id,
+        owner_membership_id=membership_id,
+        owner_membership_role="owner",
         idempotency_key=idempotency_key,
         request_fingerprint=fingerprint,
         status="awaiting_payment",
         price_cents=template.rental_price_cents,
         currency=template.rental_currency,
         billing_interval=template.rental_interval,
+        reservation_expires_at=now
+        + timedelta(hours=get_settings().platform_rental_intent_hours),
+        status_changed_at=now,
+        created_at=now,
     )
     membership = TenantMembership(
+        id=membership_id,
         tenant_id=tenant.id,
-        account_id=account.id,
+        account_id=account_id,
         role="owner",
         status="active",
     )
@@ -353,7 +578,7 @@ def create_rental_intent(
                 rental,
                 PlatformAuditEvent(
                     actor_type="platform_account",
-                    actor_account_id=account.id,
+                    actor_account_id=account_id,
                     action="template_rental.intent_created",
                     outcome="succeeded",
                     resource_type="template_rental",
@@ -367,33 +592,35 @@ def create_rental_intent(
                         "template_version_id": str(version.id),
                         "agreement_version_id": str(agreement.id),
                         "status": "awaiting_payment",
+                        "reservation_expires_at": rental.reservation_expires_at.isoformat(),
                     },
                 ),
             ]
         )
         db.commit()
-    except IntegrityError:
+    except IntegrityError as error:
+        constraint_name = _constraint_name(error)
         db.rollback()
-        concurrent = _existing_rental(db, account.id, idempotency_key)
-        if concurrent is not None:
+        if constraint_name not in EXPECTED_RENTAL_CONFLICT_CONSTRAINTS:
+            raise
+        if constraint_name == "uq_template_rentals_idempotency":
+            concurrent = _existing_rental(db, account_id, idempotency_key)
+            if concurrent is None:
+                raise
             if concurrent.request_fingerprint != fingerprint:
                 raise HTTPException(
                     status.HTTP_409_CONFLICT,
                     "Idempotency key was already used with different rental details",
                 ) from None
             return rental_response(db, concurrent), True
-        if db.scalar(
-            select(TenantReservation.id).where(
-                TenantReservation.slug == payload.requested_tenant_slug
-            )
-        ):
+        if constraint_name in {
+            "uq_platform_tenants_active_slug",
+            "uq_platform_tenants_active_hostname",
+        }:
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
                 "Requested tenant slug is unavailable",
             ) from None
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            "Rental intent conflicted with another request",
-        ) from None
+        raise
     db.refresh(rental)
     return rental_response(db, rental), False

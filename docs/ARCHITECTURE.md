@@ -93,6 +93,14 @@ implement shared-database tenancy, cross-cell provisioning, or cross-cell hostna
 delivery tranches, and [tenant monetization architecture](TENANT_MONETIZATION.md) for cell isolation
 and the separate tenant-commerce boundary.
 
+The disabled-by-default transitional platform slice requires verified mailbox ownership before any
+rental write. Authenticated confirmation and password-rotating email-link recovery share a one-use,
+delivery-safe token lifecycle; recovery revokes every pre-existing platform session. Unpaid
+reservations are quota-bound and expire to immutable history, releasing their slug and owner
+membership atomically. These controls prevent disposable accounts from holding hostnames forever;
+they still do not constitute payment, provisioning, a routable tenant, or a production platform
+launch.
+
 ## Target Topology
 
 The initial architecture follows the greenfield preference in Command B:

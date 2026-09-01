@@ -648,7 +648,8 @@ def test_password_reset_email_uses_runtime_brand_without_header_injection(
         def __exit__(self, *_args):
             return False
 
-        def starttls(self) -> None:
+        def starttls(self, *, context: object) -> None:
+            assert context is not None
             pass
 
         def login(self, _username: str, _password: str) -> None:

@@ -1,9 +1,10 @@
+import hashlib
+import hmac
 import secrets
-from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Cookie, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.auth import DbSession, token_hash
 from app.config import get_settings
@@ -64,7 +65,7 @@ def require_platform_session(
         select(PlatformSession).where(
             PlatformSession.token_hash == token_hash(token),
             PlatformSession.revoked_at.is_(None),
-            PlatformSession.expires_at > datetime.now(UTC),
+            PlatformSession.expires_at > func.transaction_timestamp(),
         )
     )
     if session is None or not session.account.is_active:
@@ -81,5 +82,32 @@ def require_platform_account(
     return session.account
 
 
+def require_verified_platform_account(
+    account: Annotated[PlatformAccount, Depends(require_platform_account)],
+) -> PlatformAccount:
+    if account.email_verified_at is None:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "platform_email_verification_required",
+                "message": "Verify the platform account email before reserving a template.",
+            },
+        )
+    return account
+
+
+def platform_rate_limit_identifier(namespace: str, value: object) -> str:
+    """Pseudonymize identifiers before they enter Redis rate-limit keys."""
+    settings = get_settings()
+    return hmac.new(
+        settings.session_secret.encode("utf-8"),
+        f"platform-rate-limit:{namespace}:{value}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+
 PlatformIdentity = Annotated[PlatformAccount, Depends(require_platform_account)]
+VerifiedPlatformIdentity = Annotated[
+    PlatformAccount, Depends(require_verified_platform_account)
+]
 CurrentPlatformSession = Annotated[PlatformSession, Depends(require_platform_session)]

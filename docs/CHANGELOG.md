@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-08-31 - Platform rental safety lifecycle
+
+- Added authenticated platform email confirmation and password-rotating mailbox-owner recovery with
+  one-use hashed tokens, explicit active/pending/terminal delivery states, failed-resend preservation
+  of the prior valid link, bounded abandoned-delivery recovery, bounded unverified-account
+  reclamation, pseudonymous rate-limit keys, and a database-enforced ban on unverified rental writes.
+- Made unpaid rental reservations time-bound and quota-limited. Expiration atomically retains the
+  terminal rental history, releases its tenant slug and exact owner membership, and appends one
+  immutable system audit event; a permanent idempotency-key replay cannot resurrect it.
+- Added bounded maintenance reconciliation and marketplace verification/expiry states while keeping
+  the `Apertures` seed preview-only, platform billing disabled, provisioning absent, domains
+  untouched, and the whole transitional control plane disabled by default.
+- Made migration `20260831_0037` lock the transitional platform tables and refuse any existing
+  platform account or rental data, requiring a reviewed identity-preserving migration runbook before
+  this safety lifecycle can be applied to a populated control plane.
+- Required CAPTCHA and a host-bound `__Host-` platform session cookie before enabling the control
+  plane in staging or production, and made omitted verification-token state fail safe to
+  `pending_delivery`.
+
 ## 2026-08-31 — Platform control-plane contract
 
 - Defined the authoritative separation among the Aperture marketplace, isolated tenant cells, and

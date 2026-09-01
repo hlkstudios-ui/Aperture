@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.auth import DbSession
 from app.platform_marketplace_service import (
     create_rental_intent,
+    reconcile_expired_rental_intents,
     rental_response,
     template_response,
 )
@@ -18,7 +19,11 @@ from app.platform_schemas import (
     TemplateRentalCollection,
     TemplateRentalResponse,
 )
-from app.platform_security import PlatformIdentity, require_platform_origin
+from app.platform_security import (
+    PlatformIdentity,
+    VerifiedPlatformIdentity,
+    require_platform_origin,
+)
 
 router = APIRouter(
     prefix="/platform",
@@ -67,7 +72,7 @@ def create_intent(
     request: Request,
     response: Response,
     db: DbSession,
-    account: PlatformIdentity,
+    account: VerifiedPlatformIdentity,
     idempotency_key: Annotated[uuid.UUID, Header(alias="Idempotency-Key")],
 ) -> TemplateRentalResponse:
     result, replayed = create_rental_intent(
@@ -80,11 +85,20 @@ def create_intent(
     response.headers["Location"] = f"/platform/rentals/{result.id}"
     if replayed:
         response.headers["Idempotency-Replayed"] = "true"
+        response.status_code = status.HTTP_200_OK
     return result
 
 
 @router.get("/rentals", response_model=TemplateRentalCollection)
 def list_rentals(db: DbSession, account: PlatformIdentity) -> TemplateRentalCollection:
+    expired = reconcile_expired_rental_intents(
+        db,
+        account_id=account.id,
+        limit=500,
+        skip_locked=False,
+    )
+    if expired:
+        db.commit()
     rentals = list(
         db.scalars(
             select(TemplateRental)
@@ -101,6 +115,14 @@ def get_rental(
     db: DbSession,
     account: PlatformIdentity,
 ) -> TemplateRentalResponse:
+    expired = reconcile_expired_rental_intents(
+        db,
+        account_id=account.id,
+        limit=500,
+        skip_locked=False,
+    )
+    if expired:
+        db.commit()
     rental = db.scalar(
         select(TemplateRental).where(
             TemplateRental.id == rental_id,

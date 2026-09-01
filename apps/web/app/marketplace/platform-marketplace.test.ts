@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatTemplatePrice,
+  isPlatformAccount,
+  isPlatformRegistration,
   isPlatformRental,
+  isPlatformVerificationDelivery,
   parseTemplateCollection,
   parseTemplateDetail,
   rentalMatchesIntent,
@@ -73,8 +76,62 @@ describe("platform marketplace response boundary", () => {
     expect(parseTemplateDetail({ ...template(), rental_agreement: { id: "agreement-1" } })).toBeNull();
   });
 
+  it("parses account verification and explicit registration delivery fields", () => {
+    const account = {
+      id: "account-1",
+      email: "owner@example.com",
+      email_verified: false,
+      unverified_account_expires_at: "2026-09-02T12:00:00Z",
+      created_at: "2026-08-31T12:00:00Z",
+    };
+
+    expect(isPlatformAccount(account)).toBe(true);
+    expect(isPlatformAccount({ ...account, email_verified: undefined })).toBe(false);
+    expect(isPlatformAccount({ ...account, unverified_account_expires_at: "not-a-date" })).toBe(false);
+    expect(isPlatformAccount({ ...account, email_verified: true })).toBe(false);
+    expect(isPlatformRegistration({
+      ...account,
+      verification_delivery: "development",
+      verification_token_expires_at: "2026-08-31T12:30:00Z",
+      development_verification_token: "development-token",
+    })).toBe(true);
+    expect(isPlatformRegistration({
+      ...account,
+      verification_delivery: "sent",
+      verification_token_expires_at: "2026-08-31T12:30:00Z",
+      development_verification_token: null,
+    })).toBe(true);
+    expect(isPlatformRegistration({
+      ...account,
+      verification_delivery: "unavailable",
+      verification_token_expires_at: null,
+      development_verification_token: null,
+    })).toBe(true);
+    expect(isPlatformRegistration({
+      ...account,
+      verification_delivery: "sent",
+      verification_token_expires_at: null,
+      development_verification_token: null,
+    })).toBe(false);
+    expect(isPlatformVerificationDelivery({
+      status: "unavailable",
+      verification_token_expires_at: null,
+      development_verification_token: null,
+    })).toBe(true);
+    expect(isPlatformVerificationDelivery({
+      status: "sent",
+      verification_token_expires_at: null,
+      development_verification_token: null,
+    })).toBe(false);
+    expect(isPlatformVerificationDelivery({
+      status: "already_verified",
+      verification_token_expires_at: "2026-08-31T12:30:00Z",
+      development_verification_token: null,
+    })).toBe(false);
+  });
+
   it("requires every nested field before treating a rental response as recorded", () => {
-const rental = {
+    const rental = {
       schema_version: 1,
       id: "44444444-4444-4444-8444-444444444444",
       status: "awaiting_payment",
@@ -104,15 +161,33 @@ const rental = {
       provisioning_status: "not_started",
       domain_status: "not_created",
       next_action: "platform_billing_unavailable",
+      reservation_active: true,
+      reservation_expires_at: "2026-09-01T12:30:00Z",
+      status_changed_at: "2026-08-31T12:30:00Z",
+      expired_at: null,
       created_at: "2026-08-31T12:30:00Z",
-} satisfies PlatformRental;
+    } satisfies PlatformRental;
 
     expect(isPlatformRental(rental)).toBe(true);
     expect(isPlatformRental({ ...rental, tenant: { ...rental.tenant, business_name: "" } })).toBe(false);
     expect(isPlatformRental({ ...rental, template: { ...rental.template, version_id: "" } })).toBe(false);
     expect(isPlatformRental({ ...rental, price_snapshot: { ...rental.price_snapshot, price_cents: 0 } })).toBe(false);
     expect(isPlatformRental({ ...rental, legal_acceptance: { ...rental.legal_acceptance, accepted_at: "not-a-date" } })).toBe(false);
+    expect(isPlatformRental({ ...rental, reservation_active: false })).toBe(false);
+    expect(isPlatformRental({ ...rental, reservation_expires_at: "not-a-date" })).toBe(false);
     expect(isPlatformRental({ ...rental, created_at: "not-a-date" })).toBe(false);
+
+    const expired = {
+      ...rental,
+      status: "expired",
+      tenant: { ...rental.tenant, status: "released" },
+      next_action: "start_new_rental_request",
+      reservation_active: false,
+      status_changed_at: "2026-09-01T12:30:00Z",
+      expired_at: "2026-09-01T12:30:00Z",
+    } satisfies PlatformRental;
+    expect(isPlatformRental(expired)).toBe(true);
+    expect(isPlatformRental({ ...expired, tenant: { ...expired.tenant, status: "reserved" } })).toBe(false);
 
     const detail = parseTemplateDetail({
       ...template({

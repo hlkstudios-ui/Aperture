@@ -6,7 +6,7 @@
     "id": "DUMMY_RELEASE_ID",
     "infrastructure_version": "DUMMY_INFRASTRUCTURE_VERSION",
     "deployed_at": "2026-08-16T00:00:00Z",
-    "migration_head": "20260831_0036",
+    "migration_head": "20260831_0037",
     "image_digests": {
       "web": "DUMMY_WEB_IMAGE_DIGEST",
       "api": "DUMMY_API_IMAGE_DIGEST",

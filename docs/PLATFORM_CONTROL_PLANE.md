@@ -40,7 +40,7 @@ records must not cross that boundary.
 | Canonical Aperture cell | Implemented as one single-owner application and one production deployment target; production launch still has external evidence gates. |
 | Current custom-domain feature | Aliases verified hostnames to that one installation. It is not a tenant or cell resolver. |
 | Existing customer and Studio identity | Implemented for the current cell, with distinct customer and administrator records and cookies. |
-| Platform foundation slice | Introduces separate platform account/session, template/version/agreement, tenant reservation/membership, legal acceptance, unpaid rental-intent, and platform-audit contracts. It is not a provisioned tenant service. |
+| Platform foundation slice | Introduces separate platform account/session and verified-email lifecycle, template/version/agreement, expiring tenant reservation/membership, legal acceptance, unpaid rental-intent, and platform-audit contracts. It is not a provisioned tenant service. |
 | Initial template offer | The migration seeds `Apertures` as `preview` only, without a current version, agreement, or price. It is intentionally not rentable until a reviewed publication workflow supplies a complete immutable offer. |
 | Platform billing | Disabled and not implemented as an active rental checkout/subscription lifecycle. |
 | Tenant cell registry and provisioner | Not implemented. A `TenantReservation` is a logical reservation, not a deployed `TenantCell`. |
@@ -75,21 +75,29 @@ The final architecture moves the platform core into its own service and database
 separate from every tenant cell. Until that separation, a unified migration may leave empty platform
 tables in a cell database as a transitional schema artifact, but a cell must never enable the
 routers, hold platform sessions or records, or receive platform billing/provisioning credentials.
+Migration `20260831_0037` therefore fails before mutation if it finds any platform account or rental
+record; migrating a real renter requires an explicit identity-verification and ownership-preserving
+runbook rather than an automatic deadline. It locks the transitional platform tables against old
+writers before checking emptiness; traffic drain and the emptiness check are deployment gates.
 The existing root storefront has not yet been replaced by the marketplace; that cutover and the
 hosted location of the legacy Aperture cell are a later routing migration.
 
-After a complete offer is reviewed and published, the first-slice contract permits an authenticated
-renter to record an agreement-backed rental intent and reserve a slug. Its terminal response is
-still `awaiting_payment`, with platform billing disabled, provisioning `not_started`, domain creation
-`not_created`, and next action `platform_billing_unavailable`. Those states are product truth, not
-temporary UI copy. The seeded preview alone cannot create an intent.
+After a complete offer is reviewed and published, the first-slice contract permits an authenticated,
+email-verified renter to record an agreement-backed rental intent and temporarily reserve a slug.
+An active response is `awaiting_payment`, with platform billing disabled, provisioning
+`not_started`, domain creation `not_created`, and next action `platform_billing_unavailable`. If the
+reservation deadline passes before the future billing flow completes, the immutable intent becomes
+`expired`, its slug is released, and replaying its original idempotency key returns that same terminal
+record. Those states are product truth, not temporary UI copy. The seeded preview alone cannot
+create an intent.
 
 ## Identity, authorization, and cookie boundaries
 
 The platform and a tenant cell are different security principals even when the same human uses both.
 
-1. A renter authenticates to the marketplace as a `PlatformAccount`. Its opaque
-   `aperture_platform_session` cookie is accepted only by the platform boundary.
+1. A renter authenticates to the marketplace as a `PlatformAccount`. Its opaque platform-session
+   cookie is accepted only by the platform boundary; staging and production require the
+   `__Host-` prefix.
 2. A viewer authenticates inside one cell through the existing customer identity and
    `aperture_session` cookie. Viewer identity never authorizes a platform rental or another cell.
 3. A cell administrator authenticates inside that cell through its administrator boundary and
@@ -103,6 +111,10 @@ cookie visible to every `*.apertures.online` tenant. A custom domain and its hos
 separate browser origins and do not silently share cookies. Moving between them requires
 reauthentication or a future short-lived, single-use handoff bound to the exact account, cell,
 audience, destination hostname, nonce, and expiry.
+
+The transitional platform router cannot be enabled in staging or production unless CAPTCHA is
+required and the platform cookie uses the `__Host-` prefix. This blocks tenant-child-host cookie
+tossing and makes automated registration/mail abuse protection a configuration invariant.
 
 Password reset, email verification, OAuth state/callbacks, tenant-provider onboarding, checkout
 returns, and billing portals must be bound to the initiating security domain and an active hostname.
@@ -125,6 +137,22 @@ cell-domain models such as customer `User`, cell `Admin`, `Subscription`, or `Si
   existing Argon2id policy.
 - `PlatformSession` stores only a token hash, has a bounded expiry and revocation time, and records
   limited device metadata. Raw session tokens never enter the database, logs, analytics, or audits.
+- `PlatformEmailVerificationToken` stores only a one-use SHA-256 token digest and an explicit
+  delivery lifecycle. Same-account confirmation uses an authenticated restricted session. A
+  mailbox owner opening the link in another browser may instead claim the unverified identity by
+  passing CAPTCHA, choosing a new strong password, and consuming the token; that transition revokes
+  every prior session, so a third party cannot retain credentials after pre-registering the email.
+- Registration commits the account, restricted session, staged `pending_delivery` token, and audit
+  before attempting delivery. Registration and resend promote a staged token only after successful
+  delivery; delivery failure terminalizes only that staged token and, for resend, preserves the
+  prior active link. A short delivery lease lets requests and maintenance retire work abandoned by
+  a crashed sender. Raw tokens are returned only in development/test and never enter persistence or
+  audit data.
+- An unverified session may browse the marketplace and manage its verification flow, but the API and
+  database both reject rental creation. An unverified registration has a bounded reclamation window;
+  reclaiming an expired, unused identity rotates credentials and revokes its old sessions and tokens.
+  The account-reclamation deadline and each verification-link deadline are separate, explicit API
+  fields and are computed from the database clock.
 - Platform registration/login receives its own trusted-origin, CAPTCHA policy, and rate-limit
   namespace. It must not reuse a tenant cell's customer session.
 
@@ -152,15 +180,19 @@ cell-domain models such as customer `User`, cell `Admin`, `Subscription`, or `Si
 - `LegalAcceptance` binds one platform account to the exact agreement version and content hash,
   accepted time, and limited request evidence. If terms, price, template version, or material
   configuration changes before intent creation, the platform requires fresh confirmation.
-- `TenantReservation` reserves an immutable internal UUID, normalized unique slug, default hosted
-  hostname, and business name. Its first-slice status is only `reserved`; it is not an application
-  cell, domain admission, resource allocation, or claim of ownership over a custom domain.
-- `TenantMembership` binds platform accounts to that reservation. Exactly one active owner is
-  required in the first slice. Future invitations and role changes require explicit authorization
-  and audit rather than client-selected ownership.
+- `TenantReservation` reserves an immutable internal UUID, normalized slug, default hosted hostname,
+  and business name. Only an active `reserved` row excludes reuse; expiration makes it `released`
+  while retaining the historical row. It is not an application cell, domain admission, resource
+  allocation, or claim of ownership over a custom domain.
+- `TenantMembership` binds platform accounts to that reservation. The rental contains an exact
+  composite foreign-key binding to the owner membership ID, tenant, account, and literal `owner`
+  role. Expiration releases that membership; future invitations and role changes require explicit
+  authorization and audit rather than client-selected ownership.
 - `TemplateRental` is currently an unpaid rental intent. It atomically pins account, reservation,
   template, template version, agreement version, legal acceptance, and the price/currency/interval
-  snapshot seen at acceptance. Its only valid first-slice state is `awaiting_payment`.
+  snapshot seen at acceptance. The first-slice states are active `awaiting_payment` and terminal
+  `expired`; its reservation deadline and lifecycle timestamps are immutable except for the single
+  legal expiration transition.
 - `awaiting_payment` grants no application access, platform subscription, cell resources, hostname
   route, viewer checkout, or entitlement. A reserved hosted hostname must not resolve to a tenant
   application.
@@ -173,9 +205,10 @@ and accounting policy and are never silently rewritten to match the current list
 
 The foundation uses three separate state machines rather than one overloaded `status` field:
 
-- **Rental intent:** currently only `awaiting_payment`; future payment-authoritative states require
-  a reviewed platform-billing tranche.
-- **Reservation/cell:** currently `reserved`; future cell lifecycle is `requested`, `provisioning`,
+- **Rental intent:** `awaiting_payment` may move once to terminal `expired`; future
+  payment-authoritative states require a reviewed platform-billing tranche.
+- **Reservation/cell:** `reserved` becomes `released` when its unpaid intent expires; future cell
+  lifecycle is `requested`, `provisioning`,
   `awaiting_owner_action`, `ready`, `suspended`, `decommissioning`, `failed`, and `decommissioned`.
 - **Hostname:** future records distinguish reserved, verification pending, active, suspended,
   removing, failed, and removed independently of cell and payment state.
@@ -183,12 +216,15 @@ The foundation uses three separate state machines rather than one overloaded `st
 While `BILLING_PROVIDER=disabled`:
 
 1. The platform may present a published template and its agreement.
-2. An authenticated account may record one idempotent legal acceptance, reservation, membership,
-   and `awaiting_payment` intent.
+2. An authenticated, verified account may hold only its configured bounded number of active unpaid
+   reservations (one by default) and may record an idempotent legal acceptance, reservation,
+   membership, and `awaiting_payment` intent.
 3. The platform returns an honest unavailable next action. It does not fabricate checkout success,
    an active rental, or a subscription reference.
 4. No provisioner job, database, Redis identity, object bucket, secret, worker, deployment,
    administrator, DNS record, edge mapping, or tenant-provider onboarding is created.
+5. Scheduled bounded reconciliation and request-path reconciliation expire overdue intents,
+   release their reservation and membership atomically, and append one system audit event.
 
 A future transition out of `awaiting_payment` may occur only after a signed platform-billing event is
 reconciled into a separate platform ledger. A checkout redirect or browser success page is never
@@ -207,7 +243,9 @@ business records. A duplicate replay creates no second success event.
   version ID, agreement ID/version/hash, explicit acceptance, business name, and requested slug.
   The price/currency/interval are separately copied from the locked server-side offer into the
   immutable rental snapshot; the browser cannot supply or override them.
-- Replaying the same key and fingerprint returns the original result without new rows.
+- Replaying the same key and fingerprint returns the original result without new rows. The key is
+  permanent history: after expiry it returns the original terminal record and never extends or
+  recreates it; a genuinely new attempt requires a new UUID key.
 - Reusing the same key with a different fingerprint fails with a conflict and creates no resources.
 - Concurrent requests for one slug or idempotency key are resolved by database
   uniqueness/foreign-key constraints, not a process-local lock.
@@ -339,6 +377,7 @@ Visitor
   -> Rent Template (in-place modal)
   -> Read/download the exact versioned agreement and confirm consent
   -> Register or sign in to the platform
+  -> Verify the platform email from the same authenticated account
   -> Server revalidates template, version, agreement hash, price, and slug
   -> Create the idempotent awaiting_payment rental intent
   -> Pay Aperture's platform rental fee                         [future]

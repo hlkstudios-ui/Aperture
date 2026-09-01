@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     admin_session_hours: int = 12
     platform_session_days: int = 30
     platform_tenant_base_domain: str = "apertures.online"
+    platform_email_verification_minutes: int = 30
+    platform_email_delivery_lease_seconds: int = 120
+    platform_unverified_account_hours: int = 24
+    platform_rental_intent_hours: int = 24
     registration_rate_limit_per_hour: int = 10
     session_secret: str = "replace_with_a_long_random_local_secret"
     oauth_google_client_id: str | None = None
@@ -225,6 +229,8 @@ class Settings(BaseSettings):
             (self.smtp_host, self.smtp_username, self.smtp_password, self.smtp_from_email)
         ):
             raise ValueError("SMTP settings are required for staging and production")
+        if self.app_env == "production" and not self.smtp_starttls:
+            raise ValueError("SMTP_STARTTLS must be enabled in production")
         if (
             self.app_env in {"staging", "production"}
             and self.billing_provider == "development_stub"
@@ -353,8 +359,46 @@ class Settings(BaseSettings):
             not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", name) for name in cookie_names
         ):
             raise ValueError("Customer, administrator, and platform cookies must be distinct")
+        if (
+            self.app_env in {"staging", "production"}
+            and self.platform_control_plane_enabled
+            and not self.platform_session_cookie.startswith("__Host-")
+        ):
+            raise ValueError(
+                "PLATFORM_SESSION_COOKIE must use the __Host- prefix when the platform "
+                "control plane is enabled outside development"
+            )
+        if (
+            self.app_env in {"staging", "production"}
+            and self.platform_control_plane_enabled
+            and not self.captcha_required
+        ):
+            raise ValueError(
+                "CAPTCHA_REQUIRED must be true when the platform control plane is enabled "
+                "outside development"
+            )
         if not 1 <= self.platform_session_days <= 90:
             raise ValueError("PLATFORM_SESSION_DAYS must be between 1 and 90")
+        if not 10 <= self.platform_email_verification_minutes <= 1440:
+            raise ValueError("PLATFORM_EMAIL_VERIFICATION_MINUTES must be between 10 and 1440")
+        if not 30 <= self.platform_email_delivery_lease_seconds <= 300:
+            raise ValueError("PLATFORM_EMAIL_DELIVERY_LEASE_SECONDS must be between 30 and 300")
+        if (
+            self.platform_email_delivery_lease_seconds
+            >= self.platform_email_verification_minutes * 60
+        ):
+            raise ValueError(
+                "PLATFORM_EMAIL_DELIVERY_LEASE_SECONDS must be strictly less than the "
+                "verification token lifetime"
+            )
+        if not 1 <= self.platform_unverified_account_hours <= 168:
+            raise ValueError("PLATFORM_UNVERIFIED_ACCOUNT_HOURS must be between 1 and 168")
+        if self.platform_email_verification_minutes > self.platform_unverified_account_hours * 60:
+            raise ValueError(
+                "PLATFORM_EMAIL_VERIFICATION_MINUTES must not outlive the unverified account"
+            )
+        if not 1 <= self.platform_rental_intent_hours <= 168:
+            raise ValueError("PLATFORM_RENTAL_INTENT_HOURS must be between 1 and 168")
         self.platform_tenant_base_domain = (
             self.platform_tenant_base_domain.strip().lower().rstrip(".")
         )

@@ -127,8 +127,8 @@ def test_production_rejects_placeholder_credentials_and_insecure_origins() -> No
         )
 
 
-def test_production_requires_private_clamav_scanning() -> None:
-    production = {
+def _valid_production_settings() -> dict[str, object]:
+    return {
         "_env_file": None,
         "app_env": "production",
         "api_origin": "https://watch.example.com/api",
@@ -153,15 +153,59 @@ def test_production_requires_private_clamav_scanning() -> None:
         "private_studio_required": True,
         "studio_edge_secret": "p" * 64,
         "admin_web_origin": "https://studio.example-tailnet.ts.net",
+        "malware_scanner_mode": "clamav_tcp",
+        "malware_scanner_host": "private-clamd.internal",
+        "platform_control_plane_enabled": False,
+        "captcha_required": False,
+        "captcha_test_mode": False,
     }
-    with pytest.raises(ValidationError, match="ClamAV TCP"):
-        Settings(**production, malware_scanner_mode="eicar")
+
+
+def test_production_platform_requires_host_cookie_and_captcha() -> None:
+    production = _valid_production_settings()
+    with pytest.raises(ValidationError, match="__Host- prefix"):
+        Settings(
+            **{
+                **production,
+                "platform_control_plane_enabled": True,
+                "platform_session_cookie": "aperture_platform_session",
+                "captcha_required": True,
+                "turnstile_secret_key": "production-turnstile-secret",
+            }
+        )
+    with pytest.raises(ValidationError, match="CAPTCHA_REQUIRED"):
+        Settings(
+            **{
+                **production,
+                "platform_control_plane_enabled": True,
+                "platform_session_cookie": "__Host-aperture_platform_session",
+            }
+        )
+
     settings = Settings(
-        **production,
-        malware_scanner_mode="clamav_tcp",
-        malware_scanner_host="private-clamd.internal",
+        **{
+            **production,
+            "platform_control_plane_enabled": True,
+            "platform_session_cookie": "__Host-aperture_platform_session",
+            "captcha_required": True,
+            "turnstile_secret_key": "production-turnstile-secret",
+        }
     )
+    assert settings.platform_session_cookie.startswith("__Host-")
+    assert settings.captcha_required is True
+
+
+def test_production_requires_private_clamav_scanning() -> None:
+    production = _valid_production_settings()
+    with pytest.raises(ValidationError, match="ClamAV TCP"):
+        Settings(**{**production, "malware_scanner_mode": "eicar"})
+    settings = Settings(**production)
     assert settings.malware_scanner_mode == "clamav_tcp"
+    with pytest.raises(ValidationError, match="SMTP_STARTTLS"):
+        Settings(
+            **production,
+            smtp_starttls=False,
+        )
     without_private_studio = {
         key: value
         for key, value in production.items()
@@ -170,14 +214,10 @@ def test_production_requires_private_clamav_scanning() -> None:
     with pytest.raises(ValidationError, match="PRIVATE_STUDIO_REQUIRED"):
         Settings(
             **without_private_studio,
-            malware_scanner_mode="clamav_tcp",
-            malware_scanner_host="private-clamd.internal",
         )
     with pytest.raises(ValidationError, match="must cover CDN_TOKEN_TTL_SECONDS"):
         Settings(
             **production,
-            malware_scanner_mode="clamav_tcp",
-            malware_scanner_host="private-clamd.internal",
             cdn_token_ttl_seconds=301,
             playback_lease_seconds=300,
         )

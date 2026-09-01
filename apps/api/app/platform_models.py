@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -28,18 +29,37 @@ class PlatformAccount(Base):
     __tablename__ = "platform_accounts"
     __table_args__ = (
         CheckConstraint("email = lower(email)", name="ck_platform_accounts_email_lowercase"),
+        CheckConstraint(
+            "(email_verified_at IS NULL AND email_verification_expires_at IS NOT NULL) OR "
+            "(email_verified_at IS NOT NULL AND email_verification_expires_at IS NULL)",
+            name="ck_platform_accounts_email_verification_state",
+        ),
+        CheckConstraint(
+            "active_unpaid_reservation_limit BETWEEN 0 AND 5",
+            name="ck_platform_accounts_unpaid_reservation_limit",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    email_verification_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
+    active_unpaid_reservation_limit: Mapped[int] = mapped_column(
+        SmallInteger, default=1, server_default="1"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     sessions: Mapped[list["PlatformSession"]] = relationship(
+        back_populates="account", cascade="all, delete-orphan"
+    )
+    email_verification_tokens: Mapped[list["PlatformEmailVerificationToken"]] = relationship(
         back_populates="account", cascade="all, delete-orphan"
     )
 
@@ -66,6 +86,65 @@ class PlatformSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     account: Mapped[PlatformAccount] = relationship(back_populates="sessions")
+
+
+class PlatformEmailVerificationToken(Base):
+    """A one-use platform verification credential; only its SHA-256 digest is persisted."""
+
+    __tablename__ = "platform_email_verification_tokens"
+    __table_args__ = (
+        CheckConstraint(
+            "token_hash ~ '^[0-9a-f]{64}$'",
+            name="ck_platform_email_verification_tokens_hash",
+        ),
+        CheckConstraint(
+            "expires_at > created_at",
+            name="ck_platform_email_verification_tokens_expiry",
+        ),
+        CheckConstraint(
+            "state IN ('active', 'pending_delivery', 'used', 'superseded', "
+            "'delivery_failed')",
+            name="ck_platform_email_verification_tokens_state",
+        ),
+        CheckConstraint(
+            "(state IN ('active', 'pending_delivery') AND used_at IS NULL) OR "
+            "(state IN ('used', 'superseded', 'delivery_failed') "
+            "AND used_at IS NOT NULL)",
+            name="ck_platform_email_verification_tokens_state_timestamps",
+        ),
+        Index(
+            "uq_platform_email_verification_tokens_active_account",
+            "account_id",
+            unique=True,
+            postgresql_where=text("state = 'active'"),
+        ),
+        Index(
+            "uq_platform_email_verification_tokens_pending_account",
+            "account_id",
+            unique=True,
+            postgresql_where=text("state = 'pending_delivery'"),
+        ),
+        Index(
+            "ix_platform_email_verification_tokens_pending_created",
+            "created_at",
+            "id",
+            postgresql_where=text("state = 'pending_delivery'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("platform_accounts.id", ondelete="CASCADE"), index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    state: Mapped[str] = mapped_column(
+        String(24), default="pending_delivery", server_default="pending_delivery", index=True
+    )
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    account: Mapped[PlatformAccount] = relationship(back_populates="email_verification_tokens")
 
 
 class PlatformTemplate(Base):
@@ -237,14 +316,33 @@ class TenantReservation(Base):
             "hosted_hostname = lower(hosted_hostname) AND right(hosted_hostname, 1) <> '.'",
             name="ck_platform_tenants_hosted_hostname",
         ),
-        CheckConstraint("status = 'reserved'", name="ck_platform_tenants_reserved_only"),
+        CheckConstraint(
+            "(status = 'reserved' AND released_at IS NULL AND release_reason IS NULL) OR "
+            "(status = 'released' AND released_at IS NOT NULL AND release_reason = 'expired')",
+            name="ck_platform_tenants_lifecycle",
+        ),
+        Index(
+            "uq_platform_tenants_active_slug",
+            "slug",
+            unique=True,
+            postgresql_where=text("status = 'reserved'"),
+        ),
+        Index(
+            "uq_platform_tenants_active_hostname",
+            "hosted_hostname",
+            unique=True,
+            postgresql_where=text("status = 'reserved'"),
+        ),
+        Index("ix_platform_tenants_slug_created", "slug", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    slug: Mapped[str] = mapped_column(String(63), unique=True, index=True)
-    hosted_hostname: Mapped[str] = mapped_column(String(253), unique=True, index=True)
+    slug: Mapped[str] = mapped_column(String(63), index=True)
+    hosted_hostname: Mapped[str] = mapped_column(String(253), index=True)
     business_name: Mapped[str] = mapped_column(String(120))
     status: Mapped[str] = mapped_column(String(24), default="reserved", server_default="reserved")
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    release_reason: Mapped[str | None] = mapped_column(String(24))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -254,11 +352,21 @@ class TenantMembership(Base):
     __tablename__ = "tenant_memberships"
     __table_args__ = (
         UniqueConstraint("tenant_id", "account_id", name="uq_tenant_memberships_tenant_account"),
+        UniqueConstraint(
+            "id",
+            "tenant_id",
+            "account_id",
+            "role",
+            name="uq_tenant_memberships_owner_binding",
+        ),
         CheckConstraint(
-            "role IN ('owner', 'administrator', 'member')",
+            "role = 'owner'",
             name="ck_tenant_memberships_role",
         ),
-        CheckConstraint("status = 'active'", name="ck_tenant_memberships_active_only"),
+        CheckConstraint(
+            "status IN ('active', 'released')",
+            name="ck_tenant_memberships_lifecycle",
+        ),
         Index(
             "uq_tenant_memberships_one_owner",
             "tenant_id",
@@ -347,7 +455,36 @@ class TemplateRental(Base):
             name="fk_template_rentals_owner_membership",
             ondelete="RESTRICT",
         ),
-        CheckConstraint("status = 'awaiting_payment'", name="ck_template_rentals_unpaid_only"),
+        ForeignKeyConstraint(
+            ["owner_membership_id", "tenant_id", "account_id", "owner_membership_role"],
+            [
+                "tenant_memberships.id",
+                "tenant_memberships.tenant_id",
+                "tenant_memberships.account_id",
+                "tenant_memberships.role",
+            ],
+            name="fk_template_rentals_exact_owner_membership",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "owner_membership_role = 'owner'",
+            name="ck_template_rentals_owner_membership_role",
+        ),
+        CheckConstraint(
+            "status IN ('awaiting_payment', 'expired')",
+            name="ck_template_rentals_lifecycle_status",
+        ),
+        CheckConstraint(
+            "status_changed_at >= created_at AND "
+            "((status = 'awaiting_payment' AND expired_at IS NULL) OR "
+            "(status = 'expired' AND expired_at IS NOT NULL "
+            "AND status_changed_at = expired_at))",
+            name="ck_template_rentals_lifecycle_timestamps",
+        ),
+        CheckConstraint(
+            "reservation_expires_at > created_at",
+            name="ck_template_rentals_reservation_expiry",
+        ),
         CheckConstraint("price_cents > 0", name="ck_template_rentals_price_positive"),
         CheckConstraint("currency ~ '^[A-Z]{3}$'", name="ck_template_rentals_currency"),
         CheckConstraint(
@@ -358,6 +495,18 @@ class TemplateRental(Base):
             name="ck_template_rentals_request_fingerprint",
         ),
         Index("ix_template_rentals_account_created", "account_id", "created_at"),
+        Index(
+            "ix_template_rentals_active_account_expiry",
+            "account_id",
+            "reservation_expires_at",
+            postgresql_where=text("status = 'awaiting_payment'"),
+        ),
+        Index(
+            "ix_template_rentals_due_expiry",
+            "reservation_expires_at",
+            "id",
+            postgresql_where=text("status = 'awaiting_payment'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -371,6 +520,10 @@ class TemplateRental(Base):
     template_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     agreement_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     legal_acceptance_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    owner_membership_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    owner_membership_role: Mapped[str] = mapped_column(
+        String(24), default="owner", server_default="owner"
+    )
     idempotency_key: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     request_fingerprint: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(
@@ -379,6 +532,9 @@ class TemplateRental(Base):
     price_cents: Mapped[int] = mapped_column(Integer)
     currency: Mapped[str] = mapped_column(String(3))
     billing_interval: Mapped[str] = mapped_column(String(16))
+    reservation_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    status_changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -400,6 +556,15 @@ class PlatformAuditEvent(Base):
         ),
         Index("ix_platform_audit_events_action_created", "action", "created_at"),
         Index("ix_platform_audit_events_resource", "resource_type", "resource_id"),
+        Index(
+            "uq_platform_audit_events_rental_expired",
+            "resource_id",
+            unique=True,
+            postgresql_where=text(
+                "resource_type = 'template_rental' "
+                "AND action = 'template_rental.intent_expired'"
+            ),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

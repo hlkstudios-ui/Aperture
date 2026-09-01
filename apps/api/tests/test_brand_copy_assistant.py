@@ -110,6 +110,7 @@ def test_observability_never_captures_request_bodies_or_stack_locals(
     )
     settings = Settings(
         _env_file=None,
+        app_env="development",
         error_tracking_dsn="https://public@example.test/1",
         brand_ai_provider="openai",
         openai_api_key="server-side-project-key",
@@ -127,6 +128,26 @@ def test_observability_never_captures_request_bodies_or_stack_locals(
     assert captured["include_local_variables"] is False
     assert captured["max_request_body_size"] == "never"
     assert "server-side-project-key" not in repr(settings)
+
+
+def test_observability_never_sends_isolated_test_failures_to_sentry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = False
+
+    def unexpected_init(**_kwargs: object) -> None:
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr("app.observability.sentry_sdk.init", unexpected_init)
+    configure_observability(
+        Settings(
+            _env_file=None,
+            app_env="test",
+            error_tracking_dsn="https://public@production.example.test/1",
+        )
+    )
+    assert called is False
 
 
 def test_assistant_input_normalizes_unicode_and_rejects_invisible_controls() -> None:

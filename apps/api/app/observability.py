@@ -34,7 +34,7 @@ def configure_observability(settings: Settings) -> None:
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(logging.INFO)
-    if settings.error_tracking_dsn:
+    if settings.error_tracking_dsn and settings.app_env != "test":
         sentry_sdk.init(
             dsn=settings.error_tracking_dsn,
             environment=settings.app_env,
