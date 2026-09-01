@@ -34,11 +34,10 @@ exact reviewed exporter releases with patched Go dependencies into pinned nonroo
 runtimes; Prometheus and ClamAV remain audited upstream runtime images.
 
 An owner `.env` or previously rendered `/opt/aperture/.env` from an older release will not contain
-`MEDIA_WORKER_IMAGE`, `CADDY_IMAGE`, `STORAGE_IMAGE`, `NODE_EXPORTER_IMAGE`, and
-`BLACKBOX_IMAGE` and therefore fails closed. Add all five labeled fields to the owner file using
-`credentials.example.env` as the reference, run the eight-artifact build/pin workflow, then
-re-render and transfer the complete mode-0600 VPS artifact. Do not patch the sanitized VPS file
-in place or copy the owner credential file to the server.
+all current image and public-address labels and therefore fails closed. Add the missing fields to
+the owner file using `credentials.example.env` as the reference, run the eight-artifact build/pin
+workflow, then re-render and transfer the complete mode-0600 VPS artifact. Do not patch the
+sanitized VPS file in place or copy the owner credential file to the server.
 
 ## Capacity profiles
 
@@ -84,6 +83,25 @@ Keep media-processing concurrency conservative, alert on memory pressure, and mo
 before sustained traffic or parallel transcodes. Do not weaken the validator or increase compact
 ceilings without measured load and restore evidence.
 
+## Public ingress address binding
+
+Set `HOSTINGER_VPS_IP` to the provider-assigned public IPv4 address and
+`HOSTINGER_VPS_IPV6` to the provider-assigned public IPv6 address. These two values are non-secret
+runtime configuration: the sanitizer includes them in the exact VPS allowlist, while SSH keys,
+Hostinger tokens, Tailscale credentials, and other workstation controls remain excluded.
+
+Production Compose publishes Caddy's port 80 TCP and port 443 TCP/UDP sockets separately on both
+configured public addresses. It deliberately does not publish to `0.0.0.0` or `::`. This allows
+Tailscale Serve to retain its private port-443 listeners on the node's tailnet IPv4 and IPv6
+addresses without colliding with public Caddy. Do not put a Tailscale address, a loopback address,
+a wildcard, or a documentation address in either field. Deploy validation requires the correct IP
+family and a globally routable address; rendered-topology validation requires the complete six
+address/port/protocol bindings.
+
+If Hostinger changes either public address, update the owner `.env`, re-render the mode-0600 VPS
+runtime, validate it, and redeploy Compose as one reviewed operation. Never hand-edit only the
+server copy.
+
 ## Credential file
 
 The repository-root `.env` is the **only owner-edited credential file**. It contains labeled
@@ -107,11 +125,12 @@ python3 deploy/production/hostinger/prepare_vps_env.py generate --input .env
 ```
 
 The VPS receives a separate machine-rendered `/opt/aperture/.env` containing only the exact
-Compose runtime and host-audit allowlists. In particular, it contains no Hostinger API token,
-local SSH configuration, build inputs, one-shot Cloudflare DNS/preflight credentials, Tailscale
-control credentials, or one-shot restore/rollback inputs. A dedicated Cloudflare Custom
-Hostnames/KV runtime token is rendered only when custom domains are enabled. Treat both files as
-secrets, but do not confuse the sanitized runtime artifact with the owner source file.
+Compose runtime and host-audit allowlists. The two non-secret public bind addresses are included
+because Compose consumes them. The artifact contains no Hostinger API token, local SSH user/key
+configuration, build inputs, one-shot Cloudflare DNS/preflight credentials, Tailscale control
+credentials, or one-shot restore/rollback inputs. A dedicated Cloudflare Custom Hostnames/KV
+runtime token is rendered only when custom domains are enabled. Treat both files as secrets, but
+do not confuse the sanitized runtime artifact with the owner source file.
 
 `HOSTINGER_API_TOKEN` is intentionally optional after provisioning. Keep it empty or revoked for
 release builds, source validation, runtime rendering, deployment, and steady-state operations.
@@ -554,18 +573,37 @@ deploy/production/hostinger/operations.sh preflight
 
 ## Isolated restore rehearsal
 
-Fill the restore section of the root `.env`, use a newly created empty database whose name
-begins with `aperture_restore_`, and use a read-only backup identity.
-The guard rejects dummy values, production-shaped database names, non-HTTPS storage, an
-invalid manifest suffix, or a missing confirmation before Docker starts:
+Do not add restore authorization or the read-only restore identity to the owner `.env`, the
+sanitized `production.env`, or a versioned release. Copy `restore.example.env` to a temporary
+file on the owner workstation and fill its exact eight-label allowlist. Use a newly created
+empty database whose name begins with `aperture_restore_` and a backup-store identity that can
+read objects but cannot write or delete them.
+
+Transfer that file through the encrypted administration channel, then install it into the
+controller-owned shared boundary. The fixed path prevents a release from retaining the
+one-shot authorization:
 
 ```bash
-deploy/production/hostinger/operations.sh restore
+sudo install -o root -g root -m 0600 /root/aperture-restore.env.incoming \
+  /opt/aperture/shared/restore.env
 ```
+
+Run the rehearsal under the same lock used by deployments and other stateful operations:
+
+```bash
+sudo flock -n /opt/aperture/shared/production-deploy.lock \
+  /opt/aperture/current/deploy/production/hostinger/operations.sh restore
+```
+
+Before Docker starts, the launcher requires a root-owned, non-symlink mode-0600 input in an
+owner-protected directory and rejects missing, duplicate, extra, or dummy labels,
+production-shaped database names, non-HTTPS storage, an invalid manifest suffix, or a missing
+confirmation. Only the eight allowlisted values enter the restore container; the second
+Compose input exists for this command only and does not modify the live production runtime.
 
 The restore verifier binds the manifest to its dump, checks size and SHA-256 before
 `pg_restore`, then verifies migration head and table count. It never creates or drops a
-database.
+database. Remove `/opt/aperture/shared/restore.env` after recording the rehearsal evidence.
 
 ## Immutable-image rollback
 

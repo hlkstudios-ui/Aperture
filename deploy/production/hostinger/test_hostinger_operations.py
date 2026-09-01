@@ -191,6 +191,56 @@ class HostingerRestoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "aperture_restore_"):
             restore.validate(values)
 
+    def test_restore_input_is_an_exact_allowlist(self):
+        content = (ROOT / "restore.example.env").read_text()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "restore.env"
+            path.write_text(content + "API_IMAGE=must-not-enter-restore\n")
+            with self.assertRaisesRegex(ValueError, "unexpected labels: API_IMAGE"):
+                restore.load(path)
+
+            path.write_text(content + "RESTORE_CONFIRMATION=duplicate\n")
+            with self.assertRaisesRegex(ValueError, "duplicate label"):
+                restore.load(path)
+
+    def test_restore_rejects_empty_values_before_container_start(self):
+        values = restore.load(ROOT / "restore.example.env")
+        values["BACKUP_S3_ACCESS_KEY"] = ""
+        with self.assertRaisesRegex(ValueError, "empty labels: BACKUP_S3_ACCESS_KEY"):
+            restore.validate(values)
+
+    @unittest.skipIf(os.name == "nt", "Windows does not enforce POSIX dotenv modes")
+    def test_restore_input_requires_mode_0600_and_a_protected_parent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            path = parent / "restore.env"
+            path.write_text("one-shot input")
+            owner_uid = path.stat().st_uid
+
+            os.chmod(parent, 0o700)
+            os.chmod(path, 0o644)
+            with self.assertRaisesRegex(ValueError, "mode must be 0600"):
+                restore.validate_input_file(path, expected_owner_uid=owner_uid)
+
+            os.chmod(path, 0o600)
+            restore.validate_input_file(path, expected_owner_uid=owner_uid)
+
+            os.chmod(parent, 0o722)
+            with self.assertRaisesRegex(ValueError, "parent is not owner-protected"):
+                restore.validate_input_file(path, expected_owner_uid=owner_uid)
+
+    def test_restore_launcher_uses_only_the_shared_one_shot_input(self):
+        operations = (ROOT / "operations.sh").read_text()
+        self.assertIn(
+            "RESTORE_INPUT_FILE=/opt/aperture/shared/restore.env", operations
+        )
+        self.assertIn('--input "$RESTORE_INPUT_FILE"', operations)
+        self.assertIn("--expected-owner-uid 0", operations)
+        self.assertIn(
+            '"$@" --env-file "$RESTORE_INPUT_FILE" run --rm restore', operations
+        )
+        self.assertNotIn('validate_restore.py" --input "$ENV_FILE"', operations)
+
 
 class HostingerReplicationTests(unittest.TestCase):
     def test_dummy_replication_is_rejected_before_copy(self):
@@ -290,6 +340,37 @@ class HostingerTopologyTests(unittest.TestCase):
         services["prometheus"]["image"] = "prom/prometheus:latest"
         with self.assertRaisesRegex(ValueError, "audited upstream image"):
             topology.validate_upstream_runtime_images(services)
+
+    def test_caddy_ports_require_exact_public_ipv4_and_ipv6_bindings(self):
+        ports = [
+            {
+                "host_ip": address,
+                "published": str(published),
+                "target": target,
+                "protocol": protocol,
+            }
+            for address in ("8.8.8.8", "2606:4700:4700::1111")
+            for published, target, protocol in (
+                (80, 8080, "tcp"),
+                (443, 8443, "tcp"),
+                (443, 8443, "udp"),
+            )
+        ]
+        topology.validate_caddy_ports(ports)
+
+        wildcard = [dict(item) for item in ports]
+        wildcard[0]["host_ip"] = "0.0.0.0"
+        with self.assertRaisesRegex(ValueError, "wildcard"):
+            topology.validate_caddy_ports(wildcard)
+
+        missing_ipv6 = [item for item in ports if ":" not in item["host_ip"]]
+        with self.assertRaisesRegex(ValueError, "IPv4 and IPv6"):
+            topology.validate_caddy_ports(missing_ipv6)
+
+        wrong_target = [dict(item) for item in ports]
+        wrong_target[0]["target"] = 8443
+        with self.assertRaisesRegex(ValueError, "both public addresses"):
+            topology.validate_caddy_ports(wrong_target)
 
     def test_release_image_mappings_cover_eight_distinct_artifacts(self):
         services = {}

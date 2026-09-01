@@ -276,7 +276,35 @@ services:
   caddy:
     image: ${CADDY_IMAGE}
     restart: unless-stopped
-    ports: ["80:8080", "443:8443", "443:8443/udp"]
+    # Tailscale Serve owns 443 only on the node's tailnet addresses. Publishing
+    # Caddy on wildcard host addresses would collide with that listener even
+    # though public ingress uses different interfaces. Bind every public socket
+    # to the provider-assigned addresses explicitly instead.
+    ports:
+      - target: 8080
+        published: "80"
+        host_ip: ${HOSTINGER_VPS_IP}
+        protocol: tcp
+      - target: 8080
+        published: "80"
+        host_ip: ${HOSTINGER_VPS_IPV6}
+        protocol: tcp
+      - target: 8443
+        published: "443"
+        host_ip: ${HOSTINGER_VPS_IP}
+        protocol: tcp
+      - target: 8443
+        published: "443"
+        host_ip: ${HOSTINGER_VPS_IPV6}
+        protocol: tcp
+      - target: 8443
+        published: "443"
+        host_ip: ${HOSTINGER_VPS_IP}
+        protocol: udp
+      - target: 8443
+        published: "443"
+        host_ip: ${HOSTINGER_VPS_IPV6}
+        protocol: udp
     environment:
       ACME_EMAIL: ${ACME_EMAIL}
       WEB_HOSTNAME: ${WEB_HOSTNAME}
@@ -365,7 +393,18 @@ services:
     profiles: [operations]
     image: ${BACKUP_IMAGE}
     command: ["/opt/aperture-backup/bin/python", "/app/production_restore_verify.py"]
-    env_file: [../../../.env]
+    # operations.sh supplies the root-owned one-shot restore dotenv after the
+    # production runtime. Keep this explicit allowlist so no unrelated runtime
+    # or controller credential enters the restore container.
+    environment:
+      RESTORE_DATABASE_URL: ${RESTORE_DATABASE_URL:-}
+      RESTORE_MANIFEST_KEY: ${RESTORE_MANIFEST_KEY:-}
+      RESTORE_CONFIRMATION: ${RESTORE_CONFIRMATION:-}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_ACCESS_KEY: ${BACKUP_S3_ACCESS_KEY:-}
+      BACKUP_S3_SECRET_KEY: ${BACKUP_S3_SECRET_KEY:-}
     networks: [private]
     logging: *default-logging
     mem_limit: 1g

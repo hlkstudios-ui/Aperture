@@ -5,6 +5,7 @@ BASE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT_DIR=$(CDPATH= cd -- "$BASE_DIR/../../.." && pwd)
 ENV_FILE="$ROOT_DIR/.env"
 COMPOSE_FILE="$BASE_DIR/compose.yml"
+RESTORE_INPUT_FILE=/opt/aperture/shared/restore.env
 ACTION=${1:-}
 METRICS_DIR=${APERTURE_METRICS_DIR:-/var/lib/aperture/metrics}
 
@@ -22,8 +23,10 @@ case "$ACTION" in
   maintenance) "$@" run --rm maintenance; python3 "$BASE_DIR/record_operation.py" --directory "$METRICS_DIR" --operation maintenance ;;
   preflight) "$@" run --rm preflight; python3 "$BASE_DIR/record_operation.py" --directory "$METRICS_DIR" --operation preflight ;;
   restore)
-    python3 "$BASE_DIR/validate_restore.py" --input "$ENV_FILE"
-    "$@" run --rm restore
+    python3 "$BASE_DIR/validate_restore.py" \
+      --input "$RESTORE_INPUT_FILE" \
+      --expected-owner-uid 0
+    "$@" --env-file "$RESTORE_INPUT_FILE" run --rm restore
     python3 "$BASE_DIR/record_operation.py" --directory "$METRICS_DIR" --operation restore
     ;;
   replicate-media)

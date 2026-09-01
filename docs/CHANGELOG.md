@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-08-31 — One-shot production restore boundary
+
+- Moved isolated-restore authorization and read-only backup credentials out of the owner and
+  sanitized production environments into a dedicated root-owned mode-0600 input.
+- Restricted the restore file and container to an exact eight-label allowlist, rejected symlinks,
+  unsafe ownership/modes, duplicate or unexpected fields, and kept the one-shot input outside
+  immutable releases.
+- Updated the Hostinger and retained DigitalOcean restore procedures plus focused security,
+  Compose-boundary, and CI contract tests.
+
+## 2026-08-31 — Hostinger public-ingress listener isolation
+
+- Replaced Caddy's wildcard Hostinger port publications with explicit bindings to the configured
+  public IPv4 and IPv6 addresses for port 80 TCP and port 443 TCP/UDP. Tailscale Serve can now keep
+  its private port-443 listeners on tailnet addresses without blocking the public Caddy container.
+- Added the two non-secret bind labels to the sanitized runtime allowlist, kept workstation and
+  provider credentials excluded, and made source validation reject the wrong address family or a
+  non-public production address.
+- Extended rendered-topology validation, examples, focused tests, and the first-launch runbook so
+  wildcard, partial, or wrong-target ingress mappings fail closed.
+
 ## 2026-08-31 — Tenant viewer-monetization foundation
 
 - Chose one isolated Aperture cell per tenant as the initial commercial boundary, with independent

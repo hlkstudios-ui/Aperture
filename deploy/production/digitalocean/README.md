@@ -94,14 +94,14 @@ Space as private and versioned with lifecycle retention matching `BACKUP_RETENTI
 The scheduled job is implementation evidence only: launch still requires a successful
 isolated restore and measured RPO/RTO against the labeled owner targets.
 
-For the production rehearsal, use `restore.example.env` as a non-secret label reference
-and fill the matching restore labels in the repository-root `.env`. Create a new empty
-PostgreSQL database whose name begins with `aperture_restore_`, and use a read-only key
-for the backup Space. Run the verifier from the backup image so PostgreSQL client versions
-match:
+For the production rehearsal, copy `restore.example.env` to an ignored, temporary
+`restore.local.env`; do not put one-shot restore authorization in the repository-root `.env`.
+Create a new empty PostgreSQL database whose name begins with `aperture_restore_`, and use a
+read-only key for the backup Space. Run the verifier from the backup image so PostgreSQL client
+versions match:
 
 ```bash
-docker run --rm --env-file .env \
+docker run --rm --env-file deploy/production/digitalocean/restore.local.env \
   aperture-backup:production-readiness \
   /opt/aperture-backup/bin/python /app/production_restore_verify.py
 ```

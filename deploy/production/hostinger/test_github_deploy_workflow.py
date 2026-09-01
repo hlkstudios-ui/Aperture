@@ -241,7 +241,7 @@ class GitHubDeployWorkflowContractTests(unittest.TestCase):
             r"aperture-deploy-release --bundle",
         )
 
-    def test_clean_ci_supplies_only_the_committed_dummy_env_for_compose(self) -> None:
+    def test_clean_ci_uses_the_committed_dummy_env_without_a_root_copy(self) -> None:
         controls = self.jobs["deployment-controls"]
         rendered = "\n".join(
             step.get("run", "") for step in controls["steps"] if "run" in step
@@ -252,10 +252,11 @@ class GitHubDeployWorkflowContractTests(unittest.TestCase):
         self.assertIn("python -m pytest -q", rendered)
         self.assertNotIn("unittest discover", rendered)
         self.assertIn(
-            "install -m 0600 deploy/production/hostinger/credentials.example.env .env",
+            "docker compose --env-file deploy/production/hostinger/credentials.example.env",
             rendered,
         )
-        self.assertIn("trap 'rm -f .env' EXIT", rendered)
+        self.assertNotIn("credentials.example.env .env", rendered)
+        self.assertNotIn("trap 'rm -f .env' EXIT", rendered)
 
     def test_api_starts_and_always_cleans_up_pinned_minio(self) -> None:
         api = self.jobs["api"]

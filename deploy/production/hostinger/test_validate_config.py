@@ -71,6 +71,8 @@ def deployable_values() -> dict[str, str]:
     values["BLACKBOX_IMAGE"] = (
         "registry.example/aperture-blackbox@sha256:" + "8" * 64
     )
+    values["HOSTINGER_VPS_IP"] = "8.8.8.8"
+    values["HOSTINGER_VPS_IPV6"] = "2606:4700:4700::1111"
     values["POLICY_REQUIRE_APPROVED"] = "true"
     return values
 
@@ -88,6 +90,40 @@ class HostingerConfigTests(unittest.TestCase):
         values["STORAGE_HOSTNAME"] = values["WEB_HOSTNAME"]
         with self.assertRaisesRegex(ValueError, "distinct"):
             validate(values, deploy=False)
+
+    def test_public_bind_addresses_require_the_right_ip_families(self):
+        invalid = (
+            ("HOSTINGER_VPS_IP", "2606:4700:4700::1111", "IPv4"),
+            ("HOSTINGER_VPS_IPV6", "8.8.8.8", "IPv6"),
+            ("HOSTINGER_VPS_IP", "8.8.8.8/32", "IPv4"),
+            ("HOSTINGER_VPS_IPV6", "[2606:4700:4700::1111]", "IPv6"),
+        )
+        for label, value, family in invalid:
+            with self.subTest(label=label, value=value):
+                values = load(EXAMPLE_INPUT)
+                values[label] = value
+                with self.assertRaisesRegex(ValueError, family):
+                    validate(values, deploy=False)
+
+    def test_deploy_requires_globally_routable_public_bind_addresses(self):
+        for label, value in (
+            ("HOSTINGER_VPS_IP", "127.0.0.1"),
+            ("HOSTINGER_VPS_IP", "203.0.113.10"),
+            ("HOSTINGER_VPS_IPV6", "::1"),
+            ("HOSTINGER_VPS_IPV6", "2001:db8::10"),
+        ):
+            with self.subTest(label=label):
+                values = deployable_values()
+                values[label] = value
+                with self.assertRaisesRegex(ValueError, f"{label} must be a public"):
+                    validate(values, deploy=True)
+
+    def test_caddy_binds_only_the_configured_public_addresses(self):
+        compose = (Path(__file__).resolve().parent / "compose.yml").read_text()
+        caddy = compose.split("  caddy:", 1)[1].split("  maintenance:", 1)[0]
+        self.assertEqual(caddy.count("host_ip: ${HOSTINGER_VPS_IP}\n"), 3)
+        self.assertEqual(caddy.count("host_ip: ${HOSTINGER_VPS_IPV6}\n"), 3)
+        self.assertNotIn('ports: ["80:8080"', caddy)
 
     def test_backup_and_replica_endpoints_must_be_https_origins(self):
         invalid_endpoints = (
@@ -556,7 +592,6 @@ class HostingerConfigTests(unittest.TestCase):
 
     def test_unrelated_control_plane_dummy_values_do_not_block_deploy(self):
         values = deployable_values()
-        values["RESTORE_DATABASE_URL"] = "DUMMY_ONE_SHOT_RESTORE_VALUE"
         values["HOSTINGER_ROLLBACK_API_IMAGE"] = "DUMMY_ROLLBACK_VALUE"
         values["TAILSCALE_AUTH_KEY"] = "DUMMY_ENROLLMENT_VALUE"
         values["CLOUDFLARE_API_TOKEN"] = "DUMMY_LOCAL_CONTROL_TOKEN"

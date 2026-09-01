@@ -136,11 +136,6 @@ jobs:
           pyyaml==6.0.3 pytest==9.0.3
       - name: Validate Hostinger topology and operations
         run: |
-          # Compose resolves the restore service's root env_file even while
-          # rendering dummy CI configuration. Supply the committed dummy
-          # contract temporarily; it contains no deployment credentials.
-          install -m 0600 deploy/production/hostinger/credentials.example.env .env
-          trap 'rm -f .env' EXIT
           python deploy/production/hostinger/validate_config.py --input deploy/production/hostinger/credentials.example.env --mode dummy
           COMPOSE_PROFILES=operations docker compose --env-file deploy/production/hostinger/credentials.example.env -f deploy/production/hostinger/compose.yml config --format json > /tmp/hostinger-compose.json
           python deploy/production/hostinger/validate_topology.py --input /tmp/hostinger-compose.json

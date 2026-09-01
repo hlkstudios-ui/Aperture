@@ -20,6 +20,8 @@ def deployable_values() -> dict[str, str]:
         for key, value in load(EXAMPLE_INPUT).items()
     }
     values["HOSTINGER_API_TOKEN"] = "hostinger-local-control-token"
+    values["HOSTINGER_VPS_IP"] = "8.8.8.8"
+    values["HOSTINGER_VPS_IPV6"] = "2606:4700:4700::1111"
     values["API_IMAGE"] = "registry.example/aperture-api@sha256:" + "1" * 64
     values["MEDIA_WORKER_IMAGE"] = (
         "registry.example/aperture-media-worker@sha256:" + "4" * 64
@@ -346,14 +348,12 @@ class PrepareVpsEnvironmentTests(unittest.TestCase):
             values = deployable_values()
             values.update(
                 {
-                    "HOSTINGER_VPS_IP": "203.0.113.10",
                     "HOSTINGER_SSH_USER": "operator",
                     "HOSTINGER_SSH_PRIVATE_KEY_PATH": "/local/private/key",
                     "DNS_ZONE": values["DNS_ZONE"],
                     "REGISTRY_REPOSITORY": "registry.example/aperture",
                     "RELEASE_ID": "release-1",
                     "RELEASE_PLATFORM": "linux/amd64",
-                    "RESTORE_DATABASE_URL": "DUMMY_CONTROL_PLANE_RESTORE",
                     "HOSTINGER_ROLLBACK_API_IMAGE": "DUMMY_ROLLBACK",
                     "HOSTINGER_ROLLBACK_MEDIA_WORKER_IMAGE": "DUMMY_ROLLBACK",
                     "HOSTINGER_ROLLBACK_WEB_IMAGE": "DUMMY_ROLLBACK",
@@ -383,7 +383,6 @@ class PrepareVpsEnvironmentTests(unittest.TestCase):
                 self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
             for excluded in (
                 "HOSTINGER_API_TOKEN",
-                "HOSTINGER_VPS_IP",
                 "HOSTINGER_SSH_USER",
                 "HOSTINGER_SSH_PRIVATE_KEY_PATH",
                 "HOSTINGER_VPS_REGION",
@@ -393,7 +392,6 @@ class PrepareVpsEnvironmentTests(unittest.TestCase):
                 "REGISTRY_REPOSITORY",
                 "RELEASE_ID",
                 "RELEASE_PLATFORM",
-                "RESTORE_DATABASE_URL",
                 "HOSTINGER_ROLLBACK_API_IMAGE",
                 "HOSTINGER_ROLLBACK_MEDIA_WORKER_IMAGE",
                 "HOSTINGER_ROLLBACK_WEB_IMAGE",
@@ -412,6 +410,10 @@ class PrepareVpsEnvironmentTests(unittest.TestCase):
                 self.assertNotIn(excluded, rendered)
             self.assertEqual(
                 rendered["CLOUDFLARE_CUSTOM_HOSTNAMES_API_TOKEN"], ""
+            )
+            self.assertEqual(rendered["HOSTINGER_VPS_IP"], "8.8.8.8")
+            self.assertEqual(
+                rendered["HOSTINGER_VPS_IPV6"], "2606:4700:4700::1111"
             )
             self.assertEqual(rendered["CLOUDFLARE_TURNSTILE_API_TOKEN"], "")
             self.assertEqual(rendered["TURNSTILE_HOSTNAME_LIMIT"], "10")
@@ -516,10 +518,38 @@ class PrepareVpsEnvironmentTests(unittest.TestCase):
 
     def test_compose_references_exactly_match_reviewed_runtime_labels(self):
         compose = (Path(__file__).resolve().parent / "compose.yml").read_text()
+        restore = compose.split("  restore:", 1)[1].split(
+            "  replicate-media:", 1
+        )[0]
+        persistent_compose = compose.replace(restore, "")
         references = set(
-            re.findall(r"(?<!\$)\$\{([A-Z][A-Z0-9_]*)(?::-[^}]*)?\}", compose)
+            re.findall(
+                r"(?<!\$)\$\{([A-Z][A-Z0-9_]*)(?::-[^}]*)?\}",
+                persistent_compose,
+            )
         )
         self.assertEqual(references, set(prepare.COMPOSE_RUNTIME_LABELS))
+        restore_references = set(
+            re.findall(r"(?<!\$)\$\{([A-Z][A-Z0-9_]*)(?::-[^}]*)?\}", restore)
+        )
+        self.assertEqual(
+            restore_references - set(prepare.COMPOSE_RUNTIME_LABELS),
+            {
+                "RESTORE_DATABASE_URL",
+                "RESTORE_MANIFEST_KEY",
+                "RESTORE_CONFIRMATION",
+            },
+        )
+
+    def test_owner_env_example_excludes_one_shot_restore_authorization(self):
+        restore_labels = {
+            "RESTORE_DATABASE_URL",
+            "RESTORE_MANIFEST_KEY",
+            "RESTORE_CONFIRMATION",
+        }
+        owner_example = load(Path(__file__).resolve().parents[3] / ".env.example")
+        self.assertTrue(restore_labels.isdisjoint(owner_example))
+        self.assertTrue(restore_labels.isdisjoint(prepare.VPS_RUNTIME_LABELS))
 
     def test_source_and_host_contracts_are_covered_without_copying_source_only_labels(
         self,

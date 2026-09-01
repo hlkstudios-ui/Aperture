@@ -40,6 +40,23 @@ class BackupImageBoundaryTests(unittest.TestCase):
             self.assertIn("security_opt: [no-new-privileges:true]", service)
             self.assertIn('tmpfs: ["/tmp:size=8g,mode=1777"]', service)
 
+    def test_restore_container_receives_only_the_restore_allowlist(self):
+        compose = (ROOT / "compose.yml").read_text()
+        restore = compose.split("  restore:", 1)[1].split("  replicate-media:", 1)[0]
+
+        self.assertNotIn("env_file:", restore)
+        for label in (
+            "RESTORE_DATABASE_URL",
+            "RESTORE_MANIFEST_KEY",
+            "RESTORE_CONFIRMATION",
+            "BACKUP_S3_ENDPOINT",
+            "BACKUP_S3_REGION",
+            "BACKUP_S3_BUCKET",
+            "BACKUP_S3_ACCESS_KEY",
+            "BACKUP_S3_SECRET_KEY",
+        ):
+            self.assertIn(f"{label}: ${{{label}:-}}", restore)
+
 
 if __name__ == "__main__":
     unittest.main()

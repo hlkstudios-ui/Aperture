@@ -1,6 +1,7 @@
 """Audit a rendered Hostinger Compose model for mandatory isolation controls."""
 
 import argparse
+import ipaddress
 import json
 from pathlib import Path
 
@@ -130,6 +131,46 @@ def validate_release_images(services: dict) -> None:
         )
 
 
+def validate_caddy_ports(ports: object) -> None:
+    if not isinstance(ports, list):
+        raise ValueError("Caddy ports must be an explicit list")
+    bindings: set[tuple[str, int, int, str]] = set()
+    addresses: dict[int, set[str]] = {4: set(), 6: set()}
+    for item in ports:
+        if not isinstance(item, dict):
+            raise ValueError("Caddy ports must use long-form address bindings")
+        host_ip = item.get("host_ip")
+        try:
+            address = ipaddress.ip_address(host_ip)
+            published = int(item["published"])
+            target = int(item["target"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("Caddy has an invalid address-bound port") from error
+        if address.is_unspecified:
+            raise ValueError("Caddy must not bind a wildcard host address")
+        protocol = item.get("protocol")
+        if protocol not in {"tcp", "udp"}:
+            raise ValueError("Caddy has an invalid ingress protocol")
+        addresses[address.version].add(str(address))
+        bindings.add((str(address), published, target, protocol))
+
+    if any(len(values) != 1 for values in addresses.values()):
+        raise ValueError("Caddy requires one explicit public IPv4 and IPv6 address")
+    public_ipv4 = next(iter(addresses[4]))
+    public_ipv6 = next(iter(addresses[6]))
+    expected = {
+        (address, published, target, protocol)
+        for address in (public_ipv4, public_ipv6)
+        for published, target, protocol in (
+            (80, 8080, "tcp"),
+            (443, 8443, "tcp"),
+            (443, 8443, "udp"),
+        )
+    }
+    if bindings != expected or len(ports) != len(expected):
+        raise ValueError("Caddy is not bound to both public addresses on 80/443")
+
+
 def validate(model: dict) -> None:
     services = model.get("services")
     if not isinstance(services, dict) or not services:
@@ -163,12 +204,7 @@ def validate(model: dict) -> None:
         if not services.get(name, {}).get("healthcheck"):
             raise ValueError(f"{name} lacks a health check")
     validate_release_images(services)
-    caddy_ports = {
-        (int(item["published"]), item["protocol"])
-        for item in services[PUBLIC_SERVICE]["ports"]
-    }
-    if caddy_ports != {(80, "tcp"), (443, "tcp"), (443, "udp")}:
-        raise ValueError("Caddy is not the exclusive 80/443 ingress")
+    validate_caddy_ports(services[PUBLIC_SERVICE].get("ports"))
     caddy_environment = services[PUBLIC_SERVICE].get("environment", {})
     if (
         not caddy_environment.get("ORIGIN_EDGE_SECRET")

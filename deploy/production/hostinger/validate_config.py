@@ -1,6 +1,7 @@
 """Validate the Hostinger VPS input file without exposing values."""
 
 import argparse
+import ipaddress
 import re
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -143,6 +144,18 @@ def require_https_origin(value: str, label: str) -> None:
         or parsed.fragment
     ):
         raise ValueError(f"{label} must be an HTTPS origin")
+
+
+def require_ip_address(
+    value: str, label: str, *, version: int
+) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError as error:
+        raise ValueError(f"{label} must be an IPv{version} address") from error
+    if address.version != version:
+        raise ValueError(f"{label} must be an IPv{version} address")
+    return address
 
 
 def load(path: Path) -> dict[str, str]:
@@ -358,6 +371,12 @@ def validate(
         raise ValueError("BRAND_AI_RATE_LIMIT_PER_HOUR must be between 1 and 120")
     if values["HOSTINGER_VPS_REGION"] != "Boston_2":
         raise ValueError("HOSTINGER_VPS_REGION must use the selected Boston_2 target")
+    public_ipv4 = require_ip_address(
+        values["HOSTINGER_VPS_IP"], "HOSTINGER_VPS_IP", version=4
+    )
+    public_ipv6 = require_ip_address(
+        values["HOSTINGER_VPS_IPV6"], "HOSTINGER_VPS_IPV6", version=6
+    )
     profile_name = values["HOSTINGER_VPS_PROFILE"]
     if profile_name not in VPS_PROFILES:
         raise ValueError("HOSTINGER_VPS_PROFILE must be compact or full")
@@ -404,6 +423,10 @@ def validate(
         )
         if dummy:
             raise ValueError("replace dummy labels before deploy: " + ", ".join(dummy))
+        if not public_ipv4.is_global:
+            raise ValueError("HOSTINGER_VPS_IP must be a public IPv4 address")
+        if not public_ipv6.is_global:
+            raise ValueError("HOSTINGER_VPS_IPV6 must be a public IPv6 address")
         for key in (
             "POSTGRES_PASSWORD",
             "REDIS_PASSWORD",
