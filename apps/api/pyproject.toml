@@ -20,7 +20,7 @@ dependencies = [
   "redis==7.3.0",
   "sentry-sdk[fastapi]==2.68.0",
   "sqlalchemy==2.0.52",
-  "stripe==13.2.0",
+  "stripe==15.5.0",
   "uvicorn[standard]==0.41.0",
 ]
 
